@@ -19,3 +19,8 @@ management:
   endpoint:
     health:
       show-details: always
+
+# Admin API token — must be provided via ADMIN_API_TOKEN env var.
+# Protects all /admin/** endpoints. See CLAUDE.md §4.
+admin:
+  api-token: ${ADMIN_API_TOKEN}

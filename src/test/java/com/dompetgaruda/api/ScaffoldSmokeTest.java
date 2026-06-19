@@ -34,6 +34,7 @@ class ScaffoldSmokeTest {
         registry.add("SPRING_DATASOURCE_URL", postgres::getJdbcUrl);
         registry.add("SPRING_DATASOURCE_USERNAME", postgres::getUsername);
         registry.add("SPRING_DATASOURCE_PASSWORD", postgres::getPassword);
+        registry.add("admin.api-token", () -> "smoke-test-admin-token");
     }
 
     @Autowired
@@ -44,7 +45,7 @@ class ScaffoldSmokeTest {
         Integer migrationCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE success = true",
                 Integer.class);
-        assertThat(migrationCount).isGreaterThanOrEqualTo(1);
+        assertThat(migrationCount).isGreaterThanOrEqualTo(2); // V1 + V2
 
         for (String table : new String[]{"users", "devices", "accounts",
                 "ledger_transactions", "ledger_entries",
