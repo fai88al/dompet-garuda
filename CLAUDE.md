@@ -30,7 +30,7 @@ Prefer simple, correct, auditable code over cleverness or premature scale.
 - **Scheduled-job locking:** ShedLock (Postgres-backed) on every `@Scheduled` method.
 - **Tests:** JUnit 5 + Testcontainers (real Postgres) for anything touching money.
 
-> **Package root:** `com.dompetdigital.api`. This is the agreed default — **confirm it before
+> **Package root:** `com.dompetgaruda.api`. This is the agreed default — **confirm it before
 > scaffolding.** If the client's GitHub org has a group-id convention (e.g. `com.<client>...`),
 > change it here first; everything else follows this value.
 
@@ -97,7 +97,7 @@ in the HTTP layer.** Do not over-engineer this.
 ## 5. Module layout
 
 ```
-src/main/java/id/dompetdigital/backend/
+src/main/java/com/dompetgaruda/api/
   common/          # shared by api + worker: entities, ledger posting, crypto (Ed25519) verification, DTOs
   config/          # ApiConfig, WorkerConfig (profile-gated beans), SecurityConfig, MqttConfig
   auth/            # device + admin authentication, device-token issuing/hashing

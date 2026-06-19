@@ -11,10 +11,10 @@
         <relativePath/>
     </parent>
 
-    <groupId>id.dompetdigital</groupId>
-    <artifactId>backend</artifactId>
+    <groupId>com.dompetgaruda</groupId>
+    <artifactId>api</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>dompet-digital-backend</name>
+    <name>dompet-garuda-api</name>
     <description>Backend for offline-capable IoT payment device</description>
     <packaging>jar</packaging>
 

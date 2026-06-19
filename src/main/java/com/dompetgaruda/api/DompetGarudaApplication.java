@@ -1,12 +1,12 @@
-package id.dompetdigital.backend;
+package com.dompetgaruda.api;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class DompetDigitalApplication {
+public class DompetGarudaApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(DompetDigitalApplication.class, args);
+        SpringApplication.run(DompetGarudaApplication.class, args);
     }
 }
