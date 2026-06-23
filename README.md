@@ -1,96 +1,72 @@
-# Dompet Garuda — Backend
+# Dompet Digital — Backend
 
-Backend for an offline-capable IoT payment device (ESP32 hardware wallet). Users top up an online balance, load a capped amount into a device-held offline pouch, and transact device-to-device over Bluetooth with no internet. When a device reconnects, it uploads a signed transaction log that the backend validates and posts to a double-entry ledger.
+## What this is
 
-**Stage: prototype.** See `CLAUDE.md` for architecture decisions and money-safety invariants.
+Dompet Digital is the backend for an offline-capable IoT payment device (ESP32 hardware wallet). Users top up an online balance on the server, move a capped amount into a device-held "offline pouch", and then transact device-to-device over Bluetooth with no internet connection. When a device reconnects, it uploads a signed transaction log that the backend validates and posts to a double-entry ledger. The device's three on-screen actions — **Cek Saldo** (check balance), **Transfer** (offline BLE), and **Scan QR** (QRIS-style) — are the user-facing surface; everything else is the machinery that makes those actions trustworthy.
 
 ---
 
-## Tech stack
+## Architecture overview
 
-| Layer | Choice |
-|---|---|
-| Language | Java 21 |
-| Framework | Spring Boot 3.4 |
-| Build | Maven (`./mvnw`) |
-| Database | PostgreSQL 16 |
-| Migrations | Flyway (append-only, `ddl-auto=validate`) |
-| Persistence | Spring Data JPA (reads) + JdbcTemplate (all ledger writes) |
-| MQTT | Eclipse Paho |
-| Job locking | ShedLock (Postgres-backed) |
-| Tests | JUnit 5 + Testcontainers (real Postgres) |
+One codebase, one Docker image, two runtime containers distinguished only by Spring profile. The **`api` profile** serves REST endpoints and runs Flyway migrations on boot; all scheduled jobs are disabled. The **`worker` profile** disables the web server and instead runs background jobs: it polls a Postgres-backed sync inbox, validates offline transaction signatures, posts ledger entries, and publishes results over MQTT. This split isolates failures — a slow reconciliation job can never take down the live API — without introducing a separate service or message broker.
 
 ---
 
 ## Prerequisites
 
 - Java 21+
-- Maven (or use the included `./mvnw` wrapper)
-- Docker Desktop (for Postgres and Testcontainers)
-
-> **macOS note:** if you have a local Homebrew PostgreSQL running on port 5432, the project's Docker container uses **port 5434** to avoid the conflict.
+- Maven 3.x (or use the included `./mvnw` wrapper — no install needed)
+- Docker Desktop (for the Postgres container and Testcontainers in tests)
+- (Optional) SSH tunnel to a remote Postgres if not running Docker locally
 
 ---
 
-## Local setup
-
-### 1. Clone and configure environment
+## Quick start
 
 ```bash
+# 1. Clone
 git clone <repo-url>
 cd dompet-garuda
 
+# 2. Configure environment
 cp .env.example .env
-```
+# Edit .env — fill in database password and admin token (see Environment variables below)
 
-Edit `.env` and fill in the values:
-
-```env
-SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5434/dompet
-SPRING_DATASOURCE_USERNAME=dompet
-SPRING_DATASOURCE_PASSWORD=<choose-a-password>
-
-POSTGRES_PASSWORD=<same-password-as-above>
-
-ADMIN_API_TOKEN=<a-strong-random-secret>
-```
-
-### 2. Start the database
-
-```bash
-# Export env vars so docker-compose picks them up
+# 3. Start Postgres
 export $(grep -v '^#' .env | xargs)
-
 docker compose up -d
+docker compose ps   # wait until postgres is healthy
 
-# Verify Postgres is healthy
-docker compose ps
+# 4. Run the API (applies migrations on first boot)
+./mvnw spring-boot:run -Dspring-boot.run.profiles=api
 ```
 
-### 3. Run the API server
+The API starts on **port 8080**. Swagger UI is available at `http://localhost:8080/swagger-ui.html`.
+
+---
+
+## Running the API
 
 ```bash
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=api
 ```
 
-Flyway applies all migrations automatically on first boot. The server starts on **port 8080**.
+- Flyway applies all pending migrations automatically on startup.
+- REST endpoints are live on port 8080.
+- Swagger UI: `http://localhost:8080/swagger-ui.html`
+- Health check: `http://localhost:8080/actuator/health`
 
-Health check:
+---
 
-```bash
-curl http://localhost:8080/actuator/health
-# {"status":"UP",...}
-```
+## Running the Worker
 
-### 4. Run the worker (separate terminal)
-
-The worker processes the sync inbox, settles offline transactions, and runs reconciliation jobs. It does not expose HTTP.
+Run in a **separate terminal** after the API has started (the API must migrate first on a fresh database):
 
 ```bash
 ./mvnw spring-boot:run -Dspring-boot.run.profiles=worker
 ```
 
-> Start the API first on a fresh database — it runs Flyway migrations. The worker validates the schema but never migrates.
+The worker has no HTTP server. It polls `sync_inbox` for uploaded device batches, validates Ed25519 signatures, posts settled transactions to the double-entry ledger, and notifies devices of the result via MQTT.
 
 ---
 
@@ -100,83 +76,88 @@ The worker processes the sync inbox, settles offline transactions, and runs reco
 ./mvnw clean verify
 ```
 
-Tests use Testcontainers to spin up a real Postgres 16 container automatically — no local database needed for the test run. Docker Desktop must be running.
+Tests use Testcontainers — Docker Desktop must be running. A real Postgres 16 container is spun up automatically; no local database configuration is needed for the test run.
 
 ---
 
-## Runtime profiles
+## API reference
 
-| Profile | Web | Flyway | Scheduled jobs | Purpose |
-|---|---|---|---|---|
-| `api` | ✅ enabled | ✅ runs migrations | ❌ off | User-facing REST API |
-| `worker` | ❌ off | ❌ schema-validate only | ✅ on | Background settlement & reconciliation |
+Interactive docs (requires API server running): `http://localhost:8080/swagger-ui.html`
 
----
+### Implemented endpoints
 
-## Admin API
+All admin endpoints require `Authorization: Bearer <ADMIN_API_TOKEN>`.
 
-All admin endpoints require:
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/admin/users` | Create a user and open their online ledger account |
+| `POST` | `/admin/devices` | Register an ESP32 device; returns device token once |
 
-```
-Authorization: Bearer <ADMIN_API_TOKEN>
-```
+See `docs/api-examples/` for ready-to-run `curl` commands.
 
-Requests without the token return `401 Unauthorized`.
-
-### Create a user
+#### POST /admin/users
 
 ```bash
 curl -s -X POST http://localhost:8080/admin/users \
-  -H "Authorization: Bearer $ADMIN_API_TOKEN" \
+  -H "Authorization: Bearer dev-admin-token-here" \
   -H "Content-Type: application/json" \
   -d '{"fullName": "Budi Santoso", "phone": "+62811000001"}' | jq .
 ```
 
-Response:
-
+Response `201`:
 ```json
 {
-  "userId": "...",
+  "userId": "<uuid>",
   "fullName": "Budi Santoso",
   "phone": "+62811000001",
   "status": "ACTIVE",
-  "onlineAccountId": "...",
-  "createdAt": "..."
+  "onlineAccountId": "<uuid>",
+  "createdAt": "<iso-timestamp>"
 }
 ```
 
-### Register a device
+#### POST /admin/devices
 
-The device's Ed25519 public key is provided by the device firmware at first setup. The server returns a **device API token once** — store it securely; it cannot be recovered.
+The device's Ed25519 public key is provided by the firmware at first setup. The `deviceToken` in the response is shown **once** — provision it onto the device immediately.
 
 ```bash
 curl -s -X POST http://localhost:8080/admin/devices \
-  -H "Authorization: Bearer $ADMIN_API_TOKEN" \
+  -H "Authorization: Bearer dev-admin-token-here" \
   -H "Content-Type: application/json" \
   -d '{
     "userId": "<uuid-from-create-user>",
-    "publicKey": "<base64-encoded-ed25519-public-key>",
+    "publicKey": "<base64-ed25519-public-key>",
     "label": "Device 1"
   }' | jq .
 ```
 
-Response:
-
+Response `201`:
 ```json
 {
-  "deviceId": "...",
-  "userId": "...",
+  "deviceId": "<uuid>",
+  "userId": "<uuid>",
   "deviceLabel": "Device 1",
-  "pouchAccountId": "...",
-  "registeredAt": "...",
+  "pouchAccountId": "<uuid>",
+  "registeredAt": "<iso-timestamp>",
   "deviceToken": "<64-char-hex — save this, shown only once>"
 }
 ```
 
-**Constraints enforced:**
-- Maximum **3 devices per user** — 4th registration returns `422`
-- Duplicate public key — returns `409`
-- Non-existent user — returns `404`
+Constraint errors: `404` user not found · `409` public key duplicate · `422` user already has 3 devices.
+
+---
+
+## Environment variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `SPRING_DATASOURCE_URL` | Yes | — | JDBC URL, e.g. `jdbc:postgresql://localhost:5434/dompet` |
+| `SPRING_DATASOURCE_USERNAME` | Yes | — | Database user, e.g. `dompet` |
+| `SPRING_DATASOURCE_PASSWORD` | Yes | — | Database password |
+| `POSTGRES_PASSWORD` | Yes (Docker) | — | Password for the Docker Postgres container; must match `SPRING_DATASOURCE_PASSWORD` |
+| `ADMIN_API_TOKEN` | Yes | — | Static Bearer token protecting all `/admin/**` endpoints |
+
+> **Port note (macOS):** the Docker Postgres runs on **5434** to avoid colliding with a Homebrew Postgres on the default 5432.
 
 ---
 
@@ -185,20 +166,22 @@ Response:
 ```
 src/main/java/com/dompetgaruda/api/
   auth/           # AdminTokenFilter, DeviceTokenService, DeviceTokenVerifier
-  common/         # JPA entities (User, Device, Account), repositories
-  config/         # SecurityConfig (stateless Bearer-token auth)
-  device/         # AdminController, AdminService, DTOs
+  common/         # JPA entities (User, Device, Account), shared repositories
+  config/         # SecurityConfig (stateless Bearer-token auth), profile-gated beans
+  device/         # AdminController, AdminService, request/response DTOs
   ledger/         # (coming) double-entry posting and balance derivation
-  sync/           # (coming) API ingest + worker settlement
-  reconciliation/ # (coming) pouch-vs-ledger reconciliation job
-  mqtt/           # (coming) Paho client, topic publishers
+  sync/           # (coming) API ingest controller + worker settlement job
+  reconciliation/ # (coming) periodic pouch-vs-ledger reconciliation
+  mqtt/           # (coming) Paho client, topic publishers/subscribers
   wallet/         # (coming) top-up, pouch provisioning
 
 src/main/resources/
-  db/migration/   # Flyway migrations (V1__init.sql, V2__...) — never edit applied files
-  application.yml              # shared config (datasource, actuator)
-  application-api.yml          # api profile (Flyway on, web on)
-  application-worker.yml       # worker profile (Flyway off, web off)
+  db/migration/          # Flyway migrations (V1__init.sql, …) — never edit applied files
+  application.yml        # shared config (datasource, actuator, pool sizes)
+  application-api.yml    # api profile: Flyway enabled, Swagger enabled
+  application-worker.yml # worker profile: no web server, Flyway disabled, Swagger disabled
+
+docs/api-examples/       # curl scripts for every endpoint
 ```
 
 ---
@@ -206,35 +189,36 @@ src/main/resources/
 ## Database schema overview
 
 | Table | Purpose |
-|---|---|
+|-------|---------|
 | `users` | Account holders |
 | `devices` | ESP32 wallets bound to a user, with Ed25519 public key |
 | `accounts` | Ledger accounts: one `SYSTEM`, one `ONLINE` per user, one `POUCH` per device |
 | `ledger_transactions` | Journal entries grouping balanced postings |
 | `ledger_entries` | Immutable double-entry postings (append-only) |
 | `offline_certificates` | Server-signed authorisation for an offline pouch (24 h expiry) |
-| `sync_inbox` | Raw device-uploaded batches; worker job queue |
-| `offline_transactions` | Settled BLE transfers with replay-protection constraint |
+| `sync_inbox` | Raw device-uploaded batches; Postgres-backed worker job queue |
+| `offline_transactions` | Settled BLE transfers with replay-protection unique constraint |
 | `flagged_transactions` | Anomalies from settlement/reconciliation |
 | `shedlock` | Distributed job lock for worker `@Scheduled` jobs |
 
 ---
 
-## Environment variables reference
+## Milestones
 
-| Variable | Required | Description |
-|---|---|---|
-| `SPRING_DATASOURCE_URL` | ✅ | JDBC URL, e.g. `jdbc:postgresql://localhost:5434/dompet` |
-| `SPRING_DATASOURCE_USERNAME` | ✅ | Database user (default: `dompet`) |
-| `SPRING_DATASOURCE_PASSWORD` | ✅ | Database password |
-| `POSTGRES_PASSWORD` | ✅ (Docker) | Password for the Docker Postgres container |
-| `ADMIN_API_TOKEN` | ✅ | Static Bearer token protecting all `/admin/**` endpoints |
+- [x] **Scaffold** — Spring Boot project, Flyway, dual-profile setup, Docker Compose (Postgres)
+- [x] **FR1 — Admin auth, user creation, device registration** — `POST /admin/users`, `POST /admin/devices`, Ed25519 public key storage, device token issuance
+- [ ] FR2 — Top-up (`POST /admin/topup`)
+- [ ] FR3 — Balance enquiry (`GET /device/balance`)
+- [ ] FR4 — Pouch load (`POST /device/pouch/load`)
+- [ ] FR5 — Sync ingest (`POST /device/sync`) + worker settlement
+- [ ] FR6 — MQTT notifications
+- [ ] FR7 — Reconciliation job
 
 ---
 
 ## Git workflow
 
 - Never push directly to `main`.
-- Work on feature branches (`feat/...`, `fix/...`), open a PR against `main`.
+- Work on feature branches (`feat/...`, `fix/...`, `docs/...`), open a PR against `main`.
 - All commits must be authored by the human developer's GitHub account.
 - `./mvnw clean verify` must pass before opening a PR.
