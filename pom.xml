@@ -92,6 +92,13 @@
             <version>${paho.version}</version>
         </dependency>
 
+        <!-- OpenAPI / Swagger UI — enabled on api profile only -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.7.0</version>
+        </dependency>
+
         <!-- Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
