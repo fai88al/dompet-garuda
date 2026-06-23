@@ -166,13 +166,13 @@ Constraint errors: `404` user not found · `409` public key duplicate · `422` u
 ```
 src/main/java/com/dompetgaruda/api/
   auth/           # AdminTokenFilter, DeviceTokenService, DeviceTokenVerifier
-  common/         # JPA entities (User, Device, Account), shared repositories
-  config/         # SecurityConfig (stateless Bearer-token auth), profile-gated beans
-  device/         # AdminController, AdminService, request/response DTOs
-  ledger/         # (coming) double-entry posting and balance derivation
-  sync/           # (coming) API ingest controller + worker settlement job
-  reconciliation/ # (coming) periodic pouch-vs-ledger reconciliation
-  mqtt/           # (coming) Paho client, topic publishers/subscribers
+  common/         # JPA entities (User, Device, Account), repositories
+  config/         # SecurityConfig (stateless Bearer-token auth)
+  device/         # AdminController, AdminService, DTOs
+  ledger/         # LedgerPostingService — double-entry posting (plain SQL), balance derivation, account helpers
+  sync/           # (coming) API ingest + worker settlement
+  reconciliation/ # (coming) pouch-vs-ledger reconciliation job
+  mqtt/           # (coming) Paho client, topic publishers
   wallet/         # (coming) top-up, pouch provisioning
 
 src/main/resources/
@@ -213,6 +213,28 @@ docs/api-examples/       # curl scripts for every endpoint
 - [ ] FR5 — Sync ingest (`POST /device/sync`) + worker settlement
 - [ ] FR6 — MQTT notifications
 - [ ] FR7 — Reconciliation job
+
+---
+
+## Milestones
+
+- [x] **Scaffold** — Spring Boot project, Flyway, dual-profile setup, Docker Compose (Postgres)
+- [x] **FR1 — Admin auth, user creation, device registration** — `POST /admin/users`, `POST /admin/devices`, Ed25519 public key storage, device token issuance
+- [x] **Ledger core** — `LedgerPostingService`: double-entry posting (plain SQL, balanced invariant enforced), balance derivation, SYSTEM/ONLINE/POUCH account helpers; Testcontainers integration tests; Swagger UI on api profile
+- [ ] FR2 — Top-up (`POST /admin/topup`)
+- [ ] FR3 — Balance enquiry (`GET /device/balance`)
+- [ ] FR4 — Pouch load (`POST /device/pouch/load`)
+- [ ] FR5 — Sync ingest (`POST /device/sync`) + worker settlement
+- [ ] FR6 — MQTT notifications
+- [ ] FR7 — Reconciliation job
+
+---
+
+## API reference
+
+Swagger UI (requires API server running): `http://localhost:8080/swagger-ui.html`
+
+No device-facing endpoints yet. The ledger core is internal infrastructure only; public endpoints will be documented here as they ship.
 
 ---
 
