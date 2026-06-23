@@ -33,6 +33,7 @@ Prefer simple, correct, auditable code over cleverness or premature scale.
 - **MQTT client:** Eclipse Paho (`org.eclipse.paho`).
 - **Scheduled-job locking:** ShedLock (Postgres-backed) on every `@Scheduled` method.
 - **Tests:** JUnit 5 + Testcontainers (real Postgres) for anything touching money.
+- **API docs:** Springdoc OpenAPI (`springdoc-openapi-starter-webmvc-ui`). Swagger UI at `/swagger-ui.html`, enabled on the `api` profile only — never on the worker.
 
 > **Package root:** `com.dompetgaruda.api`. Everything follows this value.
 
@@ -212,3 +213,80 @@ docker compose logs -f postgres
 - Don't store or transmit money decisions over MQTT.
 - Don't invent an authentication scheme — use §4.
 - Don't optimize for scale we don't have (single 8 GB box, prototype). Optimize for correctness and readability.
+
+---
+
+## 13. Documentation deliverables (required per PR — not optional)
+
+Every PR that introduces or changes at least one endpoint must ship these three artifacts alongside
+the code. They are part of the PR, not a follow-up task. A PR that adds endpoints without them
+is incomplete.
+
+### 13a. README.md (kept current, cumulative)
+
+`README.md` lives at the repo root and is updated **in the same PR** that adds the feature.
+It is the running human-readable guide to the project. Sections to maintain:
+
+```
+# Dompet Digital — Backend
+
+## What this is          (one paragraph, non-technical)
+## Architecture overview (one paragraph: monolith, two profiles, why)
+## Prerequisites         (Java 21, Maven, Docker, SSH tunnel if using VPS Postgres)
+## Quick start           (clone → set .env → tunnel or local Postgres → ./mvnw spring-boot:run)
+## Running the API       (profile flag, health check URL)
+## Running the Worker    (profile flag, what it does)
+## Running tests         (./mvnw clean verify)
+## API reference         (link to Swagger UI when running + summary table — updated each PR)
+## Environment variables (table: name | required | default | description)
+## Project structure     (the module layout from CLAUDE.md §5, one line per module)
+## Milestones            (what's built, what's coming — tick off per PR)
+```
+
+Keep the language plain — someone unfamiliar with the project should be able to run it in under
+10 minutes by following README alone.
+
+### 13b. Example API calls (docs/api-examples/)
+
+For every **new or changed endpoint**, add or update a file in `docs/api-examples/`.
+Use `curl` as the format — it's universal and requires no tooling. Name files after the feature:
+
+```
+docs/api-examples/
+  01-create-user.sh
+  02-register-device.sh
+  03-top-up.sh
+  04-balance-enquiry.sh
+  05-pouch-load.sh
+  06-sync-ingest.sh
+  ...
+```
+
+Each file must show:
+- The exact `curl` command with real-looking placeholder values (not `<YOUR_TOKEN>` — use
+  `Bearer dev-admin-token-here` style so it's copy-pasteable).
+- The **expected response** as a comment below the command (HTTP status + JSON shape).
+- Any prerequisite (e.g. "run 01-create-user.sh first").
+
+These files serve two purposes: they let any team member hit the API without Postman or reading
+the code, and they become the integration test script for the demo.
+
+### 13c. Swagger / OpenAPI annotations
+
+Every endpoint controller must have:
+- `@Tag(name = "...")` on the controller class grouping it in Swagger UI.
+- `@Operation(summary = "...")` on each method — one clear sentence.
+- `@ApiResponse` for each HTTP status the method can return (200/201/202/400/401/404/409 etc.)
+  with a brief description.
+- Request/response DTOs annotated with `@Schema(description = "...")` on each field.
+
+Springdoc will generate the `/v3/api-docs` JSON and serve Swagger UI at `/swagger-ui.html`
+automatically. The goal is that Swagger UI alone is sufficient for a team member to understand
+and exercise every endpoint without reading source code.
+
+**Swagger is enabled on the `api` profile only.** In `application-worker.yml` set:
+```yaml
+springdoc:
+  api-docs:
+    enabled: false
+```
