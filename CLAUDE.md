@@ -13,6 +13,10 @@ wallet). Users top up an online balance, move a capped amount into a device-held
 and then transact **device-to-device over Bluetooth with no internet**. When a device reconnects,
 it uploads a signed transaction log that the backend validates and posts to a ledger.
 
+The device's three core user actions mirror its on-screen menu: **Cek Saldo** (check balance),
+**Transfer** (offline BLE), and **Scan QR** (QRIS-style). The rest of the system is the machinery
+that makes those trustworthy.
+
 **Stage: prototype.** Goal is a working end-to-end demo, not a production-hardened product.
 Prefer simple, correct, auditable code over cleverness or premature scale.
 
@@ -30,9 +34,7 @@ Prefer simple, correct, auditable code over cleverness or premature scale.
 - **Scheduled-job locking:** ShedLock (Postgres-backed) on every `@Scheduled` method.
 - **Tests:** JUnit 5 + Testcontainers (real Postgres) for anything touching money.
 
-> **Package root:** `com.dompetgaruda.api`. This is the agreed default — **confirm it before
-> scaffolding.** If the client's GitHub org has a group-id convention (e.g. `com.<client>...`),
-> change it here first; everything else follows this value.
+> **Package root:** `com.dompetgaruda.api`. Everything follows this value.
 
 ### Migration ownership (important — prevents two migrators racing)
 
@@ -70,6 +72,15 @@ Postgres is the job queue — **do not add Kafka/RabbitMQ.**
 - From the server's view that money is already spent. Worst-case fraud is therefore **capped at the pouch size.**
 - Offline transactions are signed by both devices (sender signs, receiver countersigns) and carry a per-device **monotonic counter**.
 
+### Two balance views (online vs offline) — matters for "Cek Saldo"
+
+A device's balance is not a single number; be precise about which one you return:
+
+- **Online balance (authoritative):** `SUM` of the user's ONLINE-account ledger entries (credits − debits). Computed server-side; the source of truth.
+- **Pouch committed:** when a pouch is loaded, that amount moves from the online account into the device's POUCH account. Server-side, the POUCH balance equals the active certificate's issued amount. **The server does NOT see offline spends against the pouch until the device syncs.**
+- The **balance-enquiry endpoint** (FR14) is **read-only** — it returns *online balance* + *pouch committed*, clearly labelled, derived from the ledger. It is a read, never a posting, so it does **not** appear in the posting reference below.
+- While offline, only the **device's own local pouch figure** is accurate (firmware-side, not a server call). The server view and the device view reconcile at sync.
+
 ### Ledger posting reference (how each transaction type balances)
 
 | Type | Debit | Credit |
@@ -78,6 +89,8 @@ Postgres is the job queue — **do not add Kafka/RabbitMQ.**
 | `POUCH_LOAD` | user.online | device.pouch |
 | `OFFLINE_TRANSFER` | sender.pouch | **receiver.online** (never a pouch — enforces no offline re-spend) |
 | `POUCH_REFUND` | device.pouch | user.online (unspent amount, at sync) |
+
+*(Balance enquiry is a read and is intentionally absent here — it moves no money.)*
 
 ---
 
@@ -89,7 +102,7 @@ in the HTTP layer.** Do not over-engineer this.
 
 - **Admin auth:** a static token from config (`ADMIN_API_TOKEN`) presented as a Bearer token (or HTTP Basic, single admin). Protects admin endpoints: device registration, top-up, and the read-only dashboard endpoints.
 - **Device registration is admin-initiated.** The admin registers a device (supplying the owning user + the device's Ed25519 **public key**). The server creates the device and returns a **device API token once**; it stores only a hash of that token. The token is then provisioned onto the device.
-- **Device auth:** the device presents its device token as a Bearer token on device endpoints (pouch-load, sync upload). The server looks up the device by token hash.
+- **Device auth:** the device presents its device token as a Bearer token on device endpoints (balance enquiry, pouch-load, sync upload). The server looks up the device by token hash.
 - **Never** trust transport auth as the anti-double-spend mechanism. A device token proves "this call came from a provisioned device"; it does not authorize any specific money movement. That authorization comes from the signed batch contents validated by the worker.
 
 ---
@@ -102,7 +115,7 @@ src/main/java/com/dompetgaruda/api/
   config/          # ApiConfig, WorkerConfig (profile-gated beans), SecurityConfig, MqttConfig
   auth/            # device + admin authentication, device-token issuing/hashing
   device/          # device registration, public-key storage, certificate issuance
-  wallet/          # online balance, top-up, pouch provisioning
+  wallet/          # online balance, balance enquiry (read), top-up, pouch provisioning
   ledger/          # double-entry posting, balance derivation (the heart — treat with care)
   sync/            # api side: ingest controller -> sync_inbox
                    # worker side: inbox poller + settlement
@@ -121,7 +134,7 @@ src/test/java/...          # mirror of main; Testcontainers-backed money tests
 ## 6. Configuration & local development
 
 - **No secrets in committed files.** `application*.yml` reference environment variables via `${...}`; real values come from the environment / a gitignored `.env`. Commit a `.env.example` with blank or placeholder values so the shape is documented.
-- **Datasource (dev):** `localhost:5432`, database `dompet`, user `dompet`, password from `SPRING_DATASOURCE_PASSWORD` (or `POSTGRES_PASSWORD`). Run a local Postgres via the project's `docker-compose.yml` for development; the VPS database is for deployment, reached only over an SSH tunnel.
+- **Datasource (dev):** `localhost:5432`, database `dompet`, user `dompet`, password from `SPRING_DATASOURCE_PASSWORD` (or `POSTGRES_PASSWORD`). The developer reaches the VPS Postgres over an SSH tunnel that presents it as `localhost:5432`; a local Postgres (same compose) can be used instead — same config, the tunnel is simply off. Only one can hold port 5432 at a time.
 - **`.gitignore` must include:** `target/`, `.env`, `*.log`, IDE files (`.idea/`, `*.iml`).
 - Config values that aren't secret (ports, pool sizes, pouch limit, cert TTL) may have sane defaults in `application.yml`, overridable by env.
 
@@ -131,7 +144,7 @@ src/test/java/...          # mirror of main; Testcontainers-backed money tests
 
 These are the rules that keep balances correct. Violating any of these is a defect, not a style choice.
 
-1. **No mutable balance column as source of truth.** A user's balance is `SUM` of their ledger entries (credits minus debits). You may keep a cached/materialized balance for reads, but the ledger is authoritative.
+1. **No mutable balance column as source of truth.** A user's balance is `SUM` of their ledger entries (credits minus debits). You may keep a cached/materialized balance for reads, but the ledger is authoritative. The balance-enquiry endpoint (FR14) derives from the ledger; it never reads a hand-maintained balance field.
 2. **Every money movement is balanced double-entry** — for each `ledger_transactions` row, `SUM(amount) WHERE direction='CREDIT'` equals `SUM(amount) WHERE direction='DEBIT'` — written in **one DB transaction**. Never write one side without the other.
 3. **Money is `BIGINT`, in whole Rupiah (IDR has no sub-unit in practice).** Never `float`/`double`/`Float`/`Double` for money; use `long` in Java and `BIGINT` in SQL.
 4. **Idempotency at the database level.** Offline transactions carry `UNIQUE (sender_device_id, counter)`; replays are rejected by the DB, not just app logic. The sync endpoint must be safe to call twice with the same batch.
@@ -174,6 +187,7 @@ docker compose logs -f postgres
 
 - Money logic is **not** "looks right" — it is tested. Every ledger operation has a test asserting entries balance (credits = debits) and balances are correct.
 - Required test cases for sync settlement: happy path, **replayed batch (must be idempotent)**, **over-pouch-limit (must be flagged, not posted)**, malformed/poison batch (must fail gracefully, not crash the worker), and out-of-order counter.
+- Balance enquiry (FR14) has a test asserting the returned online figure equals the ledger-derived sum, and that calling it makes **no** ledger writes.
 - Use Testcontainers (real Postgres) for repository/ledger tests — do not mock the database for money logic.
 - A failing or skipped money test blocks merge.
 
@@ -194,6 +208,7 @@ docker compose logs -f postgres
 - Don't add microservices, message brokers, or a service mesh. Modular monolith, two profiles.
 - Don't introduce an ORM-generated query for any money movement.
 - Don't expand scope beyond the PRD's in-scope list. If something seems missing, ask; it may be an intentional non-goal.
+- Don't turn balance enquiry into transaction history or statements — return current figures only (PRD NG7).
 - Don't store or transmit money decisions over MQTT.
 - Don't invent an authentication scheme — use §4.
 - Don't optimize for scale we don't have (single 8 GB box, prototype). Optimize for correctness and readability.
