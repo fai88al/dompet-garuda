@@ -237,7 +237,7 @@ src/main/resources/
 - [x] **Scaffold** — Spring Boot project, Flyway, dual-profile setup, Docker Compose (Postgres)
 - [x] **FR1 — Admin auth, user creation, device registration** — `POST /admin/users`, `POST /admin/devices`, Ed25519 public key storage, device token issuance
 - [x] **Ledger core** — `LedgerPostingService`: double-entry posting (plain SQL, balanced invariant enforced), balance derivation, SYSTEM/ONLINE/POUCH account helpers; Testcontainers integration tests; Swagger UI on api profile
-- [ ] FR2 — Top-up (`POST /admin/topup`)
+- [x] **FR2 — Top-up** — `POST /admin/users/{userId}/topup`, double-entry TOPUP posting (DEBIT system → CREDIT user.online), ledger-derived balance returned
 - [ ] FR3 — Balance enquiry (`GET /device/balance`)
 - [ ] FR4 — Pouch load (`POST /device/pouch/load`)
 - [ ] FR5 — Sync ingest (`POST /device/sync`) + worker settlement
@@ -250,7 +250,15 @@ src/main/resources/
 
 Swagger UI (requires API server running): `http://localhost:8080/swagger-ui.html`
 
-No device-facing endpoints yet. The ledger core is internal infrastructure only; public endpoints will be documented here as they ship.
+All admin endpoints require `Authorization: Bearer <ADMIN_API_TOKEN>`.
+
+| Method | Path | Description | Auth |
+|---|---|---|---|
+| `POST` | `/admin/users` | Create a user + open ONLINE ledger account | Admin |
+| `POST` | `/admin/devices` | Register a device (returns token once) | Admin |
+| `POST` | `/admin/users/{userId}/topup` | Credit user's ONLINE balance (TOPUP posting) | Admin |
+
+See `docs/api-examples/` for copy-pasteable `curl` examples of every endpoint.
 
 ---
 
