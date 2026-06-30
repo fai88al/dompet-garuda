@@ -99,6 +99,13 @@
             <version>2.7.0</version>
         </dependency>
 
+        <!-- .env file loader — loads .env into Spring property sources for local dev -->
+        <dependency>
+            <groupId>me.paulschwarz</groupId>
+            <artifactId>spring-dotenv</artifactId>
+            <version>4.0.0</version>
+        </dependency>
+
         <!-- Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

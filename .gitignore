@@ -4,5 +4,6 @@ target/
 *.log
 .idea/
 *.iml
+.vscode/
 !mvnw
 !mvnw.cmd
