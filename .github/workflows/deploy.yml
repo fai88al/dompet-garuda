@@ -72,5 +72,5 @@ jobs:
             docker compose pull api worker
             docker compose up -d api worker
             docker image prune -f
-            sleep 5
-            curl -sf http://localhost:8080/actuator/health
+            sleep 15
+            docker compose exec api wget -qO- http://localhost:8080/actuator/health
