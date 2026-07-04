@@ -82,68 +82,17 @@ Tests use Testcontainers — Docker Desktop must be running. A real Postgres 16 
 
 ## API reference
 
-Interactive docs (requires API server running): `http://localhost:8080/swagger-ui.html`
-
-### Implemented endpoints
+Swagger UI (requires API server running): `http://localhost:8080/swagger-ui.html`
 
 All admin endpoints require `Authorization: Bearer <ADMIN_API_TOKEN>`.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/admin/users` | Create a user and open their online ledger account |
-| `POST` | `/admin/devices` | Register an ESP32 device; returns device token once |
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| `POST` | `/admin/users` | Create a user + open ONLINE ledger account | Admin |
+| `POST` | `/admin/devices` | Register a device (returns token once) | Admin |
+| `POST` | `/admin/users/{userId}/topup` | Credit user's ONLINE balance (TOPUP posting) | Admin |
 
-See `docs/api-examples/` for ready-to-run `curl` commands.
-
-#### POST /admin/users
-
-```bash
-curl -s -X POST http://localhost:8080/admin/users \
-  -H "Authorization: Bearer dev-admin-token-here" \
-  -H "Content-Type: application/json" \
-  -d '{"fullName": "Budi Santoso", "phone": "+62811000001"}' | jq .
-```
-
-Response `201`:
-```json
-{
-  "userId": "<uuid>",
-  "fullName": "Budi Santoso",
-  "phone": "+62811000001",
-  "status": "ACTIVE",
-  "onlineAccountId": "<uuid>",
-  "createdAt": "<iso-timestamp>"
-}
-```
-
-#### POST /admin/devices
-
-The device's Ed25519 public key is provided by the firmware at first setup. The `deviceToken` in the response is shown **once** — provision it onto the device immediately.
-
-```bash
-curl -s -X POST http://localhost:8080/admin/devices \
-  -H "Authorization: Bearer dev-admin-token-here" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "userId": "<uuid-from-create-user>",
-    "publicKey": "<base64-ed25519-public-key>",
-    "label": "Device 1"
-  }' | jq .
-```
-
-Response `201`:
-```json
-{
-  "deviceId": "<uuid>",
-  "userId": "<uuid>",
-  "deviceLabel": "Device 1",
-  "pouchAccountId": "<uuid>",
-  "registeredAt": "<iso-timestamp>",
-  "deviceToken": "<64-char-hex — save this, shown only once>"
-}
-```
-
-Constraint errors: `404` user not found · `409` public key duplicate · `422` user already has 3 devices.
+See `docs/api-examples/` for copy-pasteable `curl` examples of every endpoint.
 
 ---
 
@@ -205,44 +154,18 @@ docs/api-examples/       # curl scripts for every endpoint
 
 ## Milestones
 
-- [x] **Scaffold** — Spring Boot project, Flyway, dual-profile setup, Docker Compose (Postgres)
-- [x] **FR1 — Admin auth, user creation, device registration** — `POST /admin/users`, `POST /admin/devices`, Ed25519 public key storage, device token issuance
-- [ ] FR2 — Top-up (`POST /admin/topup`)
-- [ ] FR3 — Balance enquiry (`GET /device/balance`)
-- [ ] FR4 — Pouch load (`POST /device/pouch/load`)
-- [ ] FR5 — Sync ingest (`POST /device/sync`) + worker settlement
-- [ ] FR6 — MQTT notifications
-- [ ] FR7 — Reconciliation job
-
----
-
-## Milestones
+> FR numbers reference the PRD (`docs/PRD.md`).
 
 - [x] **Scaffold** — Spring Boot project, Flyway, dual-profile setup, Docker Compose (Postgres)
 - [x] **FR1 — Admin auth, user creation, device registration** — `POST /admin/users`, `POST /admin/devices`, Ed25519 public key storage, device token issuance
 - [x] **Ledger core** — `LedgerPostingService`: double-entry posting (plain SQL, balanced invariant enforced), balance derivation, SYSTEM/ONLINE/POUCH account helpers; Testcontainers integration tests; Swagger UI on api profile
 - [x] **FR2 — Top-up** — `POST /admin/users/{userId}/topup`, double-entry TOPUP posting (DEBIT system → CREDIT user.online), ledger-derived balance returned
-- [ ] FR3 — Balance enquiry (`GET /device/balance`)
-- [ ] FR4 — Pouch load (`POST /device/pouch/load`)
-- [ ] FR5 — Sync ingest (`POST /device/sync`) + worker settlement
-- [ ] FR6 — MQTT notifications
-- [ ] FR7 — Reconciliation job
-
----
-
-## API reference
-
-Swagger UI (requires API server running): `http://localhost:8080/swagger-ui.html`
-
-All admin endpoints require `Authorization: Bearer <ADMIN_API_TOKEN>`.
-
-| Method | Path | Description | Auth |
-|---|---|---|---|
-| `POST` | `/admin/users` | Create a user + open ONLINE ledger account | Admin |
-| `POST` | `/admin/devices` | Register a device (returns token once) | Admin |
-| `POST` | `/admin/users/{userId}/topup` | Credit user's ONLINE balance (TOPUP posting) | Admin |
-
-See `docs/api-examples/` for copy-pasteable `curl` examples of every endpoint.
+- [ ] FR14 — Balance enquiry (`GET /device/balance`) — returns online balance + pouch committed; read-only, no ledger writes
+- [ ] FR3 / FR13 — Pouch load (`POST /device/pouch/load`) — debit user.online → credit device.pouch, issue signed offline certificate
+- [ ] FR5 (+ FR4, FR6–9, FR11, FR12) — Sync ingest (`POST /device/sync`) + worker settlement — batch validation, Ed25519 verify, ledger posting, POUCH_REFUND
+- [ ] FR10 — Admin read endpoints (dashboard / user / device lookup)
+- [ ] MQTT notifications — cert-refresh hints, sync-result publish over TLS 8883
+- [ ] Reconciliation job — periodic pouch-vs-ledger check, flag mismatches
 
 ---
 
