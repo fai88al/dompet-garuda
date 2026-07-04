@@ -5,6 +5,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -21,8 +22,12 @@ import java.nio.charset.StandardCharsets;
  * on the raw string. Prototype-grade per CLAUDE.md §4 / PRD NG1.
  *
  * The plaintext token is never logged. See CLAUDE.md §7 rule 9.
+ *
+ * @Profile("api") — ADMIN_API_TOKEN is not set in the worker container; this
+ * bean must never be instantiated there.
  */
 @Component
+@Profile("api")
 public class AdminTokenFilter extends OncePerRequestFilter {
 
     private final byte[] expectedTokenHash;
