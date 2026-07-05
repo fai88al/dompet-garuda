@@ -20,6 +20,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
@@ -91,6 +92,9 @@ class BalanceEnquiryTest {
 
         // Insert an ACTIVE certificate directly — simulates a pouch load without
         // implementing the full pouch-load endpoint in this PR.
+        // Use java.sql.Timestamp for the TIMESTAMPTZ column: the PostgreSQL JDBC driver
+        // has no setObject mapping for java.time.Instant and falls through to setString,
+        // which sends text OID — PostgreSQL rejects it with 42804 (datatype mismatch).
         jdbc.update(
                 "INSERT INTO offline_certificates " +
                 "(certificate_id, device_id, pouch_account_id, issued_amount, " +
@@ -101,7 +105,7 @@ class BalanceEnquiryTest {
                 reg.pouchAccountId(),
                 50_000L,
                 "test-signature",
-                Instant.now().plus(24, ChronoUnit.HOURS));
+                Timestamp.from(Instant.now().plus(24, ChronoUnit.HOURS)));
 
         BalanceResponse resp = deviceGet("/device/balance", reg.deviceToken(), BalanceResponse.class);
 
