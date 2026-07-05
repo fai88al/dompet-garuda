@@ -1,5 +1,6 @@
 services:
   postgres:
+    container_name: dompet-postgres
     image: postgres:16
     restart: unless-stopped
     environment:
@@ -17,6 +18,7 @@ services:
       retries: 5
 
   api:
+    container_name: dompet-api
     image: ghcr.io/fai88al/dompet-garuda:latest
     restart: unless-stopped
     environment:
@@ -25,6 +27,8 @@ services:
       SPRING_DATASOURCE_USERNAME: dompet
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN}
+      SERVER_SIGNING_KEY: ${SERVER_SIGNING_KEY}
+      POUCH_MAX_AMOUNT_IDR: ${POUCH_MAX_AMOUNT_IDR}
     expose:
       - "8080"
     depends_on:
@@ -38,6 +42,7 @@ services:
       start_period: 60s
 
   worker:
+    container_name: dompet-worker
     image: ghcr.io/fai88al/dompet-garuda:latest
     restart: unless-stopped
     environment:
@@ -45,6 +50,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/dompet
       SPRING_DATASOURCE_USERNAME: dompet
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      POUCH_MAX_AMOUNT_IDR: ${POUCH_MAX_AMOUNT_IDR}
     depends_on:
       api:
         condition: service_healthy

@@ -91,6 +91,7 @@ Admin endpoints require `Authorization: Bearer <ADMIN_API_TOKEN>`. Device endpoi
 | `POST` | `/admin/users` | Create a user + open ONLINE ledger account | Admin |
 | `POST` | `/admin/devices` | Register a device (returns token once) | Admin |
 | `POST` | `/admin/users/{userId}/topup` | Credit user's ONLINE balance (TOPUP posting) | Admin |
+| `POST` | `/device/pouch/load` | Load funds into offline pouch; issues signed certificate (FR3/FR13) | Device |
 | `GET` | `/device/balance` | Return online balance + pouch committed (FR14) | Device |
 
 See `docs/api-examples/` for copy-pasteable `curl` examples of every endpoint.
@@ -106,6 +107,8 @@ See `docs/api-examples/` for copy-pasteable `curl` examples of every endpoint.
 | `SPRING_DATASOURCE_PASSWORD` | Yes | — | Database password |
 | `POSTGRES_PASSWORD` | Yes (Docker) | — | Password for the Docker Postgres container; must match `SPRING_DATASOURCE_PASSWORD` |
 | `ADMIN_API_TOKEN` | Yes | — | Static Bearer token protecting all `/admin/**` endpoints |
+| `SERVER_SIGNING_KEY` | Yes (api) | — | Base64-encoded 32-byte Ed25519 seed for signing offline certificates |
+| `POUCH_MAX_AMOUNT_IDR` | Yes | — | Maximum Rupiah amount loadable per pouch provisioning call |
 
 > **Port note (macOS):** the Docker Postgres runs on **5434** to avoid colliding with a Homebrew Postgres on the default 5432.
 
@@ -161,6 +164,8 @@ docs/api-examples/       # curl scripts for every endpoint
 - [x] **FR1 — Admin auth, user creation, device registration** — `POST /admin/users`, `POST /admin/devices`, Ed25519 public key storage, device token issuance
 - [x] **Ledger core** — `LedgerPostingService`: double-entry posting (plain SQL, balanced invariant enforced), balance derivation, SYSTEM/ONLINE/POUCH account helpers; Testcontainers integration tests; Swagger UI on api profile
 - [x] **FR2 — Top-up** — `POST /admin/users/{userId}/topup`, double-entry TOPUP posting (DEBIT system → CREDIT user.online), ledger-derived balance returned
+- [ ] FR14 — Balance enquiry (`GET /device/balance`) — returns online balance + pouch committed; read-only, no ledger writes
+- [x] **FR3 / FR13 — Pouch load** — `POST /device/pouch/load` — debit user.online → credit device.pouch, Ed25519-signed offline certificate; 409 on duplicate active cert
 - [x] **FR14 — Balance enquiry** — `GET /device/balance`, device Bearer token auth, online balance derived from ledger SUM, pouch committed from active certificate; zero ledger writes enforced by test
 - [ ] FR3 / FR13 — Pouch load (`POST /device/pouch/load`) — debit user.online → credit device.pouch, issue signed offline certificate
 - [ ] FR5 (+ FR4, FR6–9, FR11, FR12) — Sync ingest (`POST /device/sync`) + worker settlement — batch validation, Ed25519 verify, ledger posting, POUCH_REFUND

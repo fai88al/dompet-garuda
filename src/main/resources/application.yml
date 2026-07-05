@@ -24,3 +24,8 @@ management:
 # Protects all /admin/** endpoints. See CLAUDE.md §4.
 admin:
   api-token: ${ADMIN_API_TOKEN}
+
+# Maximum amount that can be loaded into an offline pouch in one provisioning call.
+# Must be provided via POUCH_MAX_AMOUNT_IDR env var. No default — require explicit config.
+pouch:
+  max-amount-idr: ${POUCH_MAX_AMOUNT_IDR}

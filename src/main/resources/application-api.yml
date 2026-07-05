@@ -8,3 +8,8 @@ spring:
 
 # Scheduled jobs are disabled in the api profile — the worker profile runs them.
 # Spring's @EnableScheduling is gated in WorkerConfig (profile=worker only).
+
+# Ed25519 private key seed (base64-encoded 32 bytes) for signing offline certificates.
+# Must be provided via SERVER_SIGNING_KEY env var. Never log this value (CLAUDE.md §7 rule 9).
+server:
+  signing-key: ${SERVER_SIGNING_KEY}
