@@ -12,187 +12,207 @@
 
 ## 1. Problem & premise
 
-Digital payments in Indonesia assume connectivity. In areas with weak or no internet — rural
-markets, transport, events, network outages — cashless payment breaks down. Dompet Digital is a
-small hardware wallet that lets two people transfer value **device-to-device over Bluetooth with no
-internet**, settling with the server later when connectivity returns.
+Digital payments in Indonesia assume connectivity. Dompet Digital is a hardware wallet that lets
+two people transfer value device-to-device over Bluetooth with no internet, settling with the
+server later when connectivity returns.
 
-This document defines what the **prototype** must do. It is deliberately narrow. Anything not listed
-in §4 is out of scope (§5) for this phase.
+This document defines what the **prototype** must do. Anything not listed in §4 is out of scope.
 
 ---
 
 ## 2. Goals
 
-- **G1.** Demonstrate a complete offline value transfer between two devices over BLE, with both devices authenticated, and have it correctly settle on the server after reconnect.
-- **G2.** Prevent offline double-spending within the limits of the prototype (cap exposure via the offline-pouch model).
-- **G3.** Prove the backend architecture (API + worker separation, transactional inbox, double-entry ledger) works end to end.
+- **G1.** Demonstrate a complete offline value transfer between two devices over BLE, correctly settled after reconnect.
+- **G2.** Prevent offline double-spending (offline-pouch model).
+- **G3.** Prove the backend architecture (API + worker, transactional inbox, double-entry ledger) end to end.
 - **G4.** Be demonstrable on a single Hostinger KVM2 server.
 
-## 2a. Non-goals (explicit — protects the timeline)
+## 2a. Non-goals
 
-- **NG1.** Not production-grade security certification, PCI/regulatory compliance, or a real banking integration. (Transport auth is prototype-grade — see CLAUDE.md §4.)
-- **NG2.** Not real money or a real payment-network (QRIS settlement) connection. Balances are prototype tokens denominated in IDR.
-- **NG3.** No multi-hop offline chains beyond what §4 allows (received-offline funds re-spent offline before sync) unless explicitly added later.
-- **NG4.** No iOS/Android consumer app beyond what's needed to demo; no merchant dashboard beyond a minimal admin view.
-- **NG5.** No high-availability, horizontal scaling, or multi-region. One box.
-- **NG6.** No KYC, onboarding flows, dispute resolution, or customer support tooling.
-- **NG7.** Balance enquiry returns **current figures only** — no transaction history, statements, or exportable account records in the prototype.
-
-> If a feature is not in §4, assume it is a non-goal for the prototype and raise it before building.
+- **NG1.** Not production-grade security or compliance.
+- **NG2.** Not real money or a real payment network. Balances are prototype tokens in IDR.
+- **NG3.** No multi-hop offline re-spend.
+- **NG4.** No consumer app; admin view only.
+- **NG5.** No horizontal scaling or multi-region.
+- **NG6.** No KYC or dispute resolution.
+- **NG7.** Balance enquiry returns current figures only — no history or statements.
 
 ---
 
 ## 3. Users
 
-- **Device holder (payer/payee).** Owns a Dompet device, **checks their balance (Cek Saldo)**, tops up online, transacts offline. Interacts via the device's screen + buttons and a PIN.
-- **Admin (team/operator).** Registers devices, tops up balances, and views devices, balances, sync status, and flagged transactions via read-only endpoints (and, optionally, a minimal UI).
+- **Device holder.** Owns a Dompet device, checks balance, tops up, transacts offline.
+- **Admin.** Registers devices, tops up balances, views the read-only dashboard.
 
 ---
 
-## 4. In-scope features (the prototype build list)
+## 4. In-scope features
 
-> **The bigger picture — the device's three core user actions mirror its on-screen menu:**
-> **Cek Saldo** (check balance, §4.2a), **Transfer** (offline device-to-device over BLE, §4.4),
-> and **Scan QR** (QRIS-style request, §4.5). Everything else in §4 (registration, top-up, pouch,
-> sync, reconciliation, admin) is the supporting machinery that makes those three trustworthy.
+> **The device's three core user actions:** **Cek Saldo** (§4.2a), **Transfer** (§4.4), **Scan QR** (§4.5). Everything else is the machinery that makes those trustworthy.
 
 ### 4.1 Device registration & identity
-- Each device generates an Ed25519 keypair on first setup; the private key never leaves the device.
-- Registration is **admin-initiated**: the admin registers a device against a user, supplying the device's **public key**. The server returns a device API token once (see CLAUDE.md §4).
-- Backend can mark a device active/suspended/locked.
+- Ed25519 keypair generated on device; private key never leaves the device.
+- Admin-initiated registration. Server returns device token once; stores only hash.
+- Backend can mark device active/suspended/locked.
 
 ### 4.2 Online top-up
-- Admin adds balance to a user's **online wallet** (prototype: a simple credit action; no real payment rail — see NG2).
-- Recorded as a double-entry ledger transaction.
+- Admin credits a user's online wallet (no real payment rail — NG2).
+- Recorded as a balanced double-entry ledger transaction (`TOPUP`).
 
-### 4.2a Balance enquiry — "Cek Saldo" (standalone read)
-- A user/device can check their balance **without performing any transaction**. This is the device's
-  first menu item ("Cek Saldo") and a first-class feature in its own right — not merely the
-  pre-transaction guard described in FR3a.
-- **Online (device connected):** the device queries the API and receives the **authoritative online
-  balance** (derived from the ledger), plus the amount **currently committed to its offline pouch**
-  (the active certificate's issued amount, as the server sees it). The user sees their full position:
-  spendable-online and held-in-pouch.
-- **Offline (no connection):** the device displays its **local pouch balance** — the figure it
-  maintains and decrements as it spends offline. This is firmware-side; there is no server call.
-- **Freshness caveat (important):** the server's pouch figure reflects what was *loaded*, not what
-  has been *spent offline since the last sync* — the server only learns of offline spends at sync.
-  So while offline, the device's local number is the accurate spendable figure; while online, the
-  server's online balance is authoritative. The two reconcile at sync.
-- **Scope:** current figures only (see NG7). No history or statement.
-- **No schema change:** this reads existing ledger and certificate tables; nothing new is stored.
+### 4.2a Balance enquiry — "Cek Saldo" (standalone read feature)
+- User checks balance without performing any transaction. First menu item on the device.
+- **Online:** API returns authoritative online balance (ledger-derived) + pouch committed
+  (active certificate `issued_amount`). Clearly labelled separately.
+- **Offline:** device shows local pouch balance (firmware-side, no server call).
+- **Freshness caveat:** server's pouch figure reflects loaded amount, not offline spends since
+  last sync. Device's local figure is the accurate spendable number when offline.
+- **Scope:** current figures only (NG7). No transaction history.
+- **No schema change.** Reads existing ledger and certificate tables. Zero ledger writes.
 
 ### 4.3 Offline pouch provisioning
-- While online, a device requests to load an amount into its offline pouch (up to the configured max).
-- Backend **debits the online balance immediately** and issues a **signed certificate** (device id, issued amount, 24h expiry) the device stores locally.
-- The device can now spend up to the issued amount offline.
+- Device loads up to `pouch_limit` (max **Rp 3,000,000** — set by Faisal for the prototype;
+  must be reviewed before any real-money deployment) into offline pouch.
+- Backend debits online balance immediately; issues signed certificate (24h expiry).
+- Device can now spend up to the issued amount offline.
 
-### 4.4 Offline transfer over BLE (the headline feature)
-- Two devices discover each other over BLE and **mutually authenticate** (exchange certificates + challenge-response proving each holds its private key).
-- Both users confirm with a local PIN.
-- **Balance & certificate check (pre-transaction):** the sender's device first verifies that its **local pouch balance** covers the amount and that its certificate is still valid (not expired/revoked). If funds are insufficient or the certificate is invalid, the transaction is refused on-device before anything is signed. Offline, this is a *local* check — there is no server to ask. This is a UX guard, not the security control (see FR3a). It reuses the same local pouch figure surfaced by Cek Saldo (§4.2a).
-- Sender constructs and signs a transaction `{txn_id, sender, receiver, amount, counter, timestamp}`; receiver verifies and countersigns.
-- Both devices update local pouch balances and append to a local **append-only log**.
-- A per-device **monotonic counter** prevents replay.
+### 4.4 Offline transfer over BLE
+- Mutual auth: exchange certificates + challenge-response over BLE.
+- Both users confirm with local PIN.
+- **Pre-transaction check:** sender's device checks local pouch balance and cert validity.
+  If insufficient or expired: refuse locally. This is a UX guard, not the security control.
+- Sender signs `{txn_id, sender, receiver, amount, counter, timestamp}`; receiver countersigns.
+- Both devices update local pouch balance and append to local append-only log.
+- Monotonic counter prevents replay.
 
-### 4.5 Offline QRIS-style request (lightweight)
-- A receiver can display a QR encoding a payment request (amount + receiver device id + nonce). The actual value transfer still happens over the signed BLE exchange.
-- Before the payer commits, the payer's device performs the same balance & certificate check as 4.4 (local pouch balance when offline; online balance when online).
-- **Prototype scope:** QRIS-format compatibility is cosmetic; this is not a real QRIS settlement.
+### 4.5 Offline QRIS-style request
+- Receiver displays QR with payment request (device id, amount, nonce). Payer scans.
+- Same balance + cert check as §4.4 before payer commits.
+- Actual value transfer via same BLE signing flow as §4.4.
+- **Prototype scope:** QRIS-format compatibility is cosmetic; not real QRIS settlement.
 
 ### 4.6 Sync & settlement
-- On reconnect, the device uploads its signed transaction batch over HTTPS.
-- API validates auth, stores the raw batch in `sync_inbox`, returns `202`.
-- Worker validates signatures + counters, checks pouch limits, posts balanced ledger entries, and flags anything inconsistent.
-- Device is notified of the result over MQTT.
+- Device reconnects, uploads signed batch via HTTPS.
+- API validates auth, stores raw batch in `sync_inbox`, returns `202`. No ledger writes.
+- Worker validates signatures + counters, checks pouch limits, posts balanced entries,
+  flags inconsistencies, publishes result via MQTT.
 
 ### 4.7 Reconciliation job
-- A scheduled worker job verifies, per certificate: `issued − signed_outflows == reported_pouch_balance` (received funds settle to the receiver's online account, not back into a pouch — see §9a).
-- Mismatches are written to a flagged table with a reason. No silent drops.
+- Scheduled worker job: per certificate, verify `issued − signed_outflows == reported_pouch_balance`.
+- Mismatches go to `flagged_transactions` with reason. Nothing silently dropped.
 
-### 4.8 Admin read endpoints (minimal)
-- Read-only API endpoints listing devices, online balances, pouch certificates, recent syncs, and flagged transactions. **The backend endpoints are in scope; a UI on top of them is optional and deferred** (NG4) — a minimal page or even an API-client view is sufficient for the demo.
-
----
-
-## 5. Out of scope (restated for emphasis)
-
-See §2a. In short: no real money, no real QRIS/bank rail, no compliance, no scaling, no consumer app polish, no multi-hop offline re-spend, no transaction history/statements (balance enquiry is current-figures-only). Build §4 and nothing beyond it.
+### 4.8 Admin read endpoints
+- Read-only endpoints: devices, balances, certs, syncs, flagged transactions.
+- UI is optional and deferred. Backend endpoints are in scope.
 
 ---
 
-## 6. Functional requirements (numbered, testable)
+## 5. Out of scope
 
-- **FR1.** A device can be registered with a public key and issued an identity + device token. Duplicate registration is rejected, and a user may hold at most **3** devices.
-- **FR2.** Top-up creates a balanced ledger transaction; online balance reflects it.
-- **FR3.** Pouch provisioning debits online balance atomically and returns a signed certificate; if online balance < requested, it is rejected.
-- **FR3a.** Before a transfer or QRIS transaction, the device checks available balance and certificate validity (local pouch balance when offline; online balance when online) and refuses the transaction if funds are insufficient or the certificate is expired/revoked. This is a UX / early-fail guard only — integrity is still enforced at settlement via signatures, the `UNIQUE(sender_device_id, counter)` constraint, and pouch-limit checks. A balance check is never trusted as the anti-double-spend mechanism.
-- **FR4.** An offline transaction with a valid sender signature and counter strictly greater than the last seen counter for that device is accepted; a replayed `(sender_device_id, counter)` is rejected by the database.
-- **FR5.** Sync ingest responds `202` within ~200 ms typical and performs no ledger writes.
-- **FR6.** The worker settles a valid batch into the ledger exactly once; re-uploading the same batch produces no duplicate entries.
-- **FR7.** A batch whose outflows exceed the pouch certificate is flagged, not posted.
-- **FR8.** A malformed batch fails its inbox row with a reason and does not crash or block the worker on other batches.
+No real money, no real QRIS/bank rail, no compliance, no scaling, no consumer app, no multi-hop
+offline re-spend, no transaction history. Build §4 only.
+
+---
+
+## 6. Functional requirements
+
+> **FR numbering follows this PRD, not the README.** If the README shows different numbers,
+> the README is wrong and should be corrected to match this document.
+
+- **FR1.** Device registration with public key; device token issued once. Duplicate rejected.
+  Max 3 devices per user.
+- **FR2.** Top-up creates balanced ledger transaction; balance reflects it.
+- **FR3.** Pouch provisioning debits online balance atomically; returns signed cert.
+  Rejects if online balance < requested.
+- **FR3a.** Pre-transaction balance + cert check (UX guard). Never trusted as anti-double-spend.
+- **FR4.** Offline txn with valid signature + counter > `last_counter` accepted.
+  Replayed `(sender_device_id, counter)` rejected by DB constraint.
+- **FR5.** Sync ingest returns `202` within ~200 ms; no ledger writes.
+- **FR6.** Worker settles valid batch exactly once; duplicate upload creates no duplicate entries.
+- **FR7.** Over-limit batch flagged, not posted.
+- **FR8.** Malformed batch fails with reason; does not crash or block worker.
 - **FR9.** Reconciliation flags any certificate whose arithmetic doesn't reconcile.
-- **FR10.** Admin read endpoints surface devices, balances, certificates, syncs, and flagged transactions.
-- **FR11.** At sync, the unspent portion of a settled certificate is refunded to the user's online balance and the certificate is closed (`SETTLED`). (Q3)
-- **FR12.** A batch uploaded after its certificate's 24h expiry is still settled but flagged `EXPIRED_CERT_LATE_SYNC` and its inbox row marked `synced_after_expiry`. (Q2)
-- **FR13.** A device has at most one `ACTIVE` certificate at a time; a new pouch-load is rejected until the prior certificate is settled/closed. (Q4)
-- **FR14.** A user/device can retrieve its current balance **without any money movement**: the API returns the authoritative **online balance** (ledger-derived) and the amount **committed to the active pouch certificate**, clearly labelled. The endpoint is **read-only** — it never writes to the ledger. (The offline pouch figure shown on the device while disconnected is firmware-side and not a backend call.)
+- **FR10.** Admin read endpoints surface devices, balances, certs, syncs, flagged transactions.
+- **FR11.** At sync, unspent pouch portion refunded to online balance; cert closed `SETTLED`.
+- **FR12.** Batch synced after cert expiry is settled but flagged `EXPIRED_CERT_LATE_SYNC`.
+- **FR13.** At most one `ACTIVE` cert per device; new pouch-load rejected if one exists.
+- **FR14.** Balance enquiry returns online balance + pouch committed without any ledger writes.
 
 ---
 
 ## 7. Technical constraints
 
-- Single Hostinger KVM2: 2 vCPU, 8 GB RAM, Ubuntu 24.04. Memory budget is real — see CLAUDE.md.
-- Stack: Java 21 / Spring Boot 3.x / PostgreSQL 16 / Mosquitto (MQTT) / Caddy / Docker Compose.
-- Device firmware: ESP32 (C/C++, ESP-IDF or Arduino framework). BLE + Ed25519 on-device.
-- Monitoring: Spring Boot Actuator + Uptime Kuma; optional Grafana Cloud agent. No self-hosted Prometheus on this box.
-- Backups: nightly encrypted `pg_dump` via restic to Cloudflare R2 / Backblaze B2, plus Hostinger snapshots.
+- Hostinger KVM2: 2 vCPU, 8 GB RAM, Ubuntu 24.04.
+- Stack: Java 21 / Spring Boot 3.x / PostgreSQL 16 / Mosquitto / Caddy / Docker Compose.
+- ESP32 firmware: C/C++, BLE + Ed25519 on-device.
+- Monitoring: Spring Boot Actuator + Uptime Kuma; optional Grafana Cloud agent.
+- Backups: nightly restic → Cloudflare R2 / Backblaze B2 + Hostinger snapshots.
+- CI/CD: GitHub Actions → GHCR → VPS deploy via SSH on push to `main`.
 
 ---
 
-## 8. Success criteria for the prototype
+## 8. Success criteria
 
-1. Two physical (or simulated) devices complete an offline transfer with no internet, and it settles correctly on the server after reconnect.
-2. A replayed/duplicated sync batch does **not** create duplicate balance — demonstrable on demand.
-3. An over-limit or tampered batch is caught and flagged, not posted.
-4. A user can check their balance (Cek Saldo) and the figures reconcile correctly across an offline-spend-then-sync cycle.
-5. The full stack runs within the 8 GB box without swapping under demo load.
-6. A backup can be **restored** successfully (tested at least once before the demo).
-
----
-
-## 9. Key risks & decisions
-
-- **R1 (critical path): firmware, not backend.** BLE + Ed25519 on ESP32 is the hardest, least-predictable work. **Mitigation:** build and test the entire backend against a **software device simulator** that speaks the same signed-payload + sync API, so backend progress does not wait on hardware.
-- **R2: multi-hop offline re-spend. DECIDED — no.** Received-offline funds are not re-spendable offline. The receiver must go online and sync; received value settles into the **online** balance (not a new pouch). To spend offline again, the receiver does a fresh pouch-load.
-- **R3: pouch limit & expiry. DECIDED.** Max **3 devices per user**; certificate validity **24 hours**.
-- **R4: PIN/auth UX. ASSUMED.** Device-local PIN with lockout after a few failed attempts (device gains a `LOCKED` status). Firmware-track detail; confirm with hardware team.
-- **R5: QRIS expectations. CONFIRMED.** §4.5 is cosmetic for the prototype — not a real QRIS settlement.
-- **R6: clock trust offline. CONFIRMED.** Counters (not timestamps) are the integrity mechanism. This is why a device that syncs after certificate expiry has its batch flagged for review (FR12).
-- **R7: balance ambiguity offline. CONFIRMED handling.** "Balance" has two views — the server's authoritative online figure and the device's local pouch figure — which diverge by whatever has been spent offline since the last sync. The Cek Saldo feature (§4.2a, FR14) surfaces both and labels them; offline, the device's local figure is the spendable truth.
-
-### 9a. Settlement rules (decided — Q1–Q4)
-
-- **Q1 — Received funds → online balance.** Offline transfer settlement debits the sender's pouch and credits the receiver's **online** account.
-- **Q2 — Late sync.** If a device syncs *after* its certificate expired, signed transactions are still settled but the batch is **flagged for admin review** (`synced_after_expiry = true`, flag reason `EXPIRED_CERT_LATE_SYNC`). See FR12.
-- **Q3 — Unspent pouch refund.** At sync, the unspent portion of a pouch is refunded to the online balance and the certificate is closed (`SETTLED`). See FR11.
-- **Q4 — One active certificate per device.** A new pouch-load requires the previous certificate to be settled/closed. See FR13.
-
-### 9b. Still open (does not block the backend build)
-
-- **Max pouch amount (IDR).** A single configuration number, to be set by Faisal. Defaulted via config until provided; not a structural decision.
+1. Two devices complete an offline transfer with no internet; settles correctly after reconnect.
+2. Replayed batch creates no duplicate balance — demonstrable on demand.
+3. Over-limit or tampered batch caught and flagged, not posted.
+4. Cek Saldo figures reconcile correctly across offline-spend-then-sync cycle.
+5. Full stack runs within 8 GB without swapping under demo load.
+6. Backup can be restored (tested at least once before demo).
 
 ---
 
-## 10. Milestones (see roadmap for detail)
+## 9. Decisions & risks
 
-1. Product definition frozen (this PRD approved). ✅
-2. Data design: ERD + schema DDL + Flyway baseline. ✅
-3. Environment: VPS hardened, Docker Compose (Postgres) up. ✅
-4. API service built (Claude Code). ◀ current (scaffold + auth/device done)
-5. Worker built (Claude Code).
-6. Device simulator + firmware track (parallel).
-7. Integration + double-spend/restore testing.
-8. Hardening + demo.
+- **R1 (critical path):** firmware, not backend. Mitigate with device simulator from PR6 onward.
+- **R2: multi-hop re-spend. DECIDED — no.** Received offline funds → online balance at sync.
+- **R3: pouch limit & expiry. DECIDED.** Max 3 devices per user; cert validity 24 hours.
+- **R4: PIN/auth UX.** Device-local lockout; confirm with hardware team.
+- **R5: QRIS. CONFIRMED** cosmetic for prototype.
+- **R6: clock trust. CONFIRMED.** Counters (not timestamps) are the integrity mechanism.
+- **R7: balance ambiguity offline. CONFIRMED.** Two views exist (server online + device local pouch);
+  Cek Saldo labels both and explains the difference.
+
+### 9a. Settlement rules (Q1–Q4)
+
+- **Q1:** Offline transfer → DEBIT sender.pouch, CREDIT receiver.ONLINE (never a pouch).
+- **Q2:** Late sync (post-expiry) → settle + flag `EXPIRED_CERT_LATE_SYNC`.
+- **Q3:** Unspent at sync → `POUCH_REFUND` to online balance; cert → `SETTLED`.
+- **Q4:** One active cert per device; new load rejected until prior is settled.
+
+### 9b. Max pouch amount (IDR)
+
+**DECIDED: Rp 3,000,000** (confirmed by Faisal).
+
+Implement as `pouch.max-amount-idr=3000000` in `application.yml` — a required config property
+with no hardcoded fallback. A missing value must cause a startup failure, not silently default
+to a wrong number in a future real-money deployment.
+
+⚠️ This was decided casually for the prototype with no documented rationale. With 3 devices
+per user and 24h cert validity, maximum offline exposure per user is Rp 9,000,000. Must be
+revisited with a proper risk review before any real-money deployment. PR5 is now unblocked.
+
+---
+
+## 10. Milestones
+
+| # | Task | Status |
+|---|------|--------|
+| 1 | Product definition frozen | ✅ done |
+| 2 | ERD + schema DDL + Flyway baseline | ✅ done |
+| 3 | VPS hardened, Docker Compose up, CI/CD working | ✅ done |
+| 4a | PR1 — Scaffold (profiles, Flyway, Testcontainers smoke test) | ✅ merged |
+| 4b | PR2 — Auth + device registration (FR1) | ✅ merged |
+| 4c | PR3 — Ledger core (double-entry posting, balance derivation) | ✅ merged |
+| 4d | PR4 — Online top-up (FR2) | ✅ merged |
+| 4e | PR4b — Balance enquiry / Cek Saldo (FR14) | ⬅ current |
+| 4f | PR5 — Pouch provisioning + certificate (FR3, FR13) | ⬜ pending |
+| 4g | PR6 — Sync ingest endpoint (FR5) | pending |
+| 5a | PR7 — Worker bootstrap + inbox poller | pending |
+| 5b | PR8 — Settlement (FR4, FR6–FR8, FR11, FR12) | pending |
+| 5c | PR9 — Reconciliation job (FR9) | pending |
+| 5d | PR10 — MQTT publisher | pending |
+| 5e | PR11 — Admin read endpoints (FR10) | pending |
+| 6 | Device simulator (parallel from PR6) | pending |
+| 7 | Caddy + domain setup (after PR6 stable) | pending |
+| 8 | Integration + safety testing | pending |
+| 9 | Hardening + demo | pending |
