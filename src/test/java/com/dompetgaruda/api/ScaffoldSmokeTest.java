@@ -34,7 +34,9 @@ class ScaffoldSmokeTest {
         registry.add("SPRING_DATASOURCE_URL", postgres::getJdbcUrl);
         registry.add("SPRING_DATASOURCE_USERNAME", postgres::getUsername);
         registry.add("SPRING_DATASOURCE_PASSWORD", postgres::getPassword);
-        registry.add("admin.api-token", () -> "smoke-test-admin-token");
+        registry.add("admin.api-token",      () -> "smoke-test-admin-token");
+        registry.add("server.signing-key",   () -> "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+        registry.add("pouch.max-amount-idr", () -> 500_000L);
     }
 
     @Autowired
