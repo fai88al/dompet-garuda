@@ -2,6 +2,9 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
 
 # Scheduled jobs are disabled in the api profile — the worker profile runs them.
 # Spring's @EnableScheduling is gated in WorkerConfig (profile=worker only).
