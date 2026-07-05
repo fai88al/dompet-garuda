@@ -60,6 +60,17 @@ jobs:
     needs: build-and-push
 
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy compose file to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: docker-compose.prod.yml
+          target: /home/${{ secrets.VPS_USER }}/dompet/
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
@@ -69,8 +80,8 @@ jobs:
           script: |
             set -e
             cd ~/dompet
-            docker compose pull api worker
-            docker compose up -d api worker
+            docker compose -f docker-compose.prod.yml pull api worker
+            docker compose -f docker-compose.prod.yml up -d api worker
             docker image prune -f
             sleep 15
-            docker compose exec api wget -qO- http://localhost:8080/actuator/health
+            docker compose -f docker-compose.prod.yml exec api wget -qO- http://localhost:8080/actuator/health

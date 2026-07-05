@@ -3,6 +3,9 @@ spring:
     web-application-type: none
   flyway:
     enabled: false
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
 
 springdoc:
   api-docs:
