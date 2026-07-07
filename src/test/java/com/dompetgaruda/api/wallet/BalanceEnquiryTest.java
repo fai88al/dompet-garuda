@@ -1,5 +1,6 @@
 package com.dompetgaruda.api.wallet;
 
+import com.dompetgaruda.api.ApiIntegrationTestBase;
 import com.dompetgaruda.api.device.dto.CreateUserRequest;
 import com.dompetgaruda.api.device.dto.CreateUserResponse;
 import com.dompetgaruda.api.device.dto.RegisterDeviceRequest;
@@ -9,16 +10,11 @@ import com.dompetgaruda.api.wallet.dto.TopUpRequest;
 import com.dompetgaruda.api.wallet.dto.TopUpResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.*;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -40,28 +36,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>Wrong/unregistered device token returns 401.</li>
  * </ol>
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@ActiveProfiles("api")
-@Testcontainers
-class BalanceEnquiryTest {
+class BalanceEnquiryTest extends ApiIntegrationTestBase {
 
     private static final String ADMIN_TOKEN = "test-admin-token-balance";
 
-    @Container
-    @SuppressWarnings("resource")
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16")
-            .withDatabaseName("dompet")
-            .withUsername("dompet")
-            .withPassword("test");
-
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry registry) {
-        registry.add("SPRING_DATASOURCE_URL", postgres::getJdbcUrl);
-        registry.add("SPRING_DATASOURCE_USERNAME", postgres::getUsername);
-        registry.add("SPRING_DATASOURCE_PASSWORD", postgres::getPassword);
-        registry.add("admin.api-token",      () -> ADMIN_TOKEN);
-        registry.add("server.signing-key",   () -> "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
-        registry.add("pouch.max-amount-idr", () -> 500_000L);
+        registry.add("admin.api-token", () -> ADMIN_TOKEN);
     }
 
     @Autowired
@@ -93,7 +74,7 @@ class BalanceEnquiryTest {
         topUp(userId, 100_000L);
 
         // Insert an ACTIVE certificate directly — simulates a pouch load without
-        // implementing the full pouch-load endpoint in this PR.
+        // implementing the full pouch-load endpoint in this test.
         // Use java.sql.Timestamp for the TIMESTAMPTZ column: the PostgreSQL JDBC driver
         // has no setObject mapping for java.time.Instant and falls through to setString,
         // which sends text OID — PostgreSQL rejects it with 42804 (datatype mismatch).

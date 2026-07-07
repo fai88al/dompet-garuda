@@ -1,5 +1,6 @@
 package com.dompetgaruda.api.wallet;
 
+import com.dompetgaruda.api.ApiIntegrationTestBase;
 import com.dompetgaruda.api.device.dto.CreateUserRequest;
 import com.dompetgaruda.api.device.dto.CreateUserResponse;
 import com.dompetgaruda.api.device.dto.RegisterDeviceRequest;
@@ -10,22 +11,15 @@ import com.dompetgaruda.api.wallet.dto.TopUpRequest;
 import com.dompetgaruda.api.wallet.dto.TopUpResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.*;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.nio.charset.StandardCharsets;
 import java.security.*;
-import java.sql.Timestamp;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.UUID;
@@ -49,13 +43,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>Atomicity: 409 conflict leaves ledger_entries unchanged.</li>
  * </ol>
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@ActiveProfiles("api")
-@Testcontainers
-class PouchLoadTest {
+class PouchLoadTest extends ApiIntegrationTestBase {
 
     private static final String ADMIN_TOKEN = "test-admin-token-pouch";
-    private static final long   MAX_AMOUNT  = 500_000L;
+    // Must match pouch.max-amount-idr inherited from ApiIntegrationTestBase (3_000_000L)
+    private static final long   MAX_AMOUNT  = 3_000_000L;
 
     // Ed25519 keypair generated once per JVM run; private seed passed to Spring
     // as server.signing-key so the server can sign and the test can verify.
@@ -75,21 +67,12 @@ class PouchLoadTest {
         }
     }
 
-    @Container
-    @SuppressWarnings("resource")
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16")
-            .withDatabaseName("dompet")
-            .withUsername("dompet")
-            .withPassword("test");
-
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry registry) {
-        registry.add("SPRING_DATASOURCE_URL", postgres::getJdbcUrl);
-        registry.add("SPRING_DATASOURCE_USERNAME", postgres::getUsername);
-        registry.add("SPRING_DATASOURCE_PASSWORD", postgres::getPassword);
-        registry.add("admin.api-token",         () -> ADMIN_TOKEN);
-        registry.add("server.signing-key",      () -> TEST_SIGNING_KEY_BASE64);
-        registry.add("pouch.max-amount-idr",    () -> MAX_AMOUNT);
+        registry.add("admin.api-token",    () -> ADMIN_TOKEN);
+        // Override the base class dummy key with the real generated keypair so
+        // the test can verify Ed25519 signatures produced by the server.
+        registry.add("server.signing-key", () -> TEST_SIGNING_KEY_BASE64);
     }
 
     @Autowired TestRestTemplate rest;
@@ -244,7 +227,7 @@ class PouchLoadTest {
     void pouchLoad_amountExceedsMax_returns400() {
         UUID userId = createUser("+62831000007");
         RegisterDeviceResponse reg = registerDevice(userId, "pk-pouch-007");
-        topUp(userId, 1_000_000L);
+        topUp(userId, MAX_AMOUNT + 1_000_000L);
 
         ResponseEntity<String> resp = rest.exchange(
                 "/device/pouch/load",
