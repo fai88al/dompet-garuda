@@ -4,11 +4,11 @@
 # Replace ADMIN_API_TOKEN with the value from your .env file.
 
 curl -s -X POST http://localhost:8080/admin/users \
-  -H "Authorization: Bearer dev-admin-token-here" \
+  -H "Authorization: Bearer 1f970b85ec0c2ad03ff4cce906d90c3ec9ee28e58dc21868ee1658a26700c632" \
   -H "Content-Type: application/json" \
   -d '{
-    "fullName": "Budi Santoso",
-    "phone": "+62811000001"
+    "fullName": "Muhammad Rizki",
+    "phone": "+6282220463884"
   }' | jq .
 
 # Expected response — HTTP 201 Created:

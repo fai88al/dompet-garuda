@@ -4,14 +4,14 @@
 #   Use the deviceToken returned by 02-register-device.sh and ensure the user
 #   has sufficient online balance from 03-top-up.sh.
 
-DEVICE_TOKEN="device-bearer-token-here"   # replace with deviceToken from 02-register-device.sh
+DEVICE_TOKEN="b6046943e494e658d5ec81ecc8e5458a2895ad7962ae43cee5e561553fc7135a"   # replace with deviceToken from 02-register-device.sh
 BASE_URL="http://localhost:8080"
 
-curl -s -X POST "$BASE_URL/device/pouch/load" \
-  -H "Authorization: Bearer $DEVICE_TOKEN" \
+curl -s -X POST "http://localhost:8080/device/pouch/load" \
+  -H "Authorization: Bearer b6046943e494e658d5ec81ecc8e5458a2895ad7962ae43cee5e561553fc7135a" \
   -H "Content-Type: application/json" \
   -d '{
-    "amount": 100000
+    "amount": 10000
   }' | jq .
 
 # Expected response (HTTP 201):

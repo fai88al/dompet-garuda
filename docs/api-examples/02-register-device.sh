@@ -6,10 +6,10 @@
 # Prerequisite: run 01-create-user.sh first and copy the returned userId below.
 
 curl -s -X POST http://localhost:8080/admin/devices \
-  -H "Authorization: Bearer dev-admin-token-here" \
+  -H "Authorization: Bearer 1f970b85ec0c2ad03ff4cce906d90c3ec9ee28e58dc21868ee1658a26700c632" \
   -H "Content-Type: application/json" \
   -d '{
-    "userId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "userId": "4d5c4272-6a8a-4bab-b322-9a85d1e227e7",
     "publicKey": "MCowBQYDK2VwAyEA47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=",
     "label": "Device 1"
   }' | jq .

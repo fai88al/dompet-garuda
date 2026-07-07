@@ -2,12 +2,12 @@
 # FR2 — Top-up a user's ONLINE balance
 # Prerequisite: run 01-create-user.sh first and substitute the returned userId below.
 
-USER_ID="a1b2c3d4-0000-0000-0000-000000000001"   # replace with actual userId from 01-create-user.sh
-ADMIN_TOKEN="dev-admin-token-here"                 # replace with ADMIN_API_TOKEN from .env
+USER_ID="4d5c4272-6a8a-4bab-b322-9a85d1e227e7"   # replace with actual userId from 01-create-user.sh
+ADMIN_TOKEN="1f970b85ec0c2ad03ff4cce906d90c3ec9ee28e58dc21868ee1658a26700c632"                 # replace with ADMIN_API_TOKEN from .env
 BASE_URL="http://localhost:8080"
 
-curl -s -X POST "$BASE_URL/admin/users/$USER_ID/topup" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
+curl -s -X POST "http://localhost:8080/admin/users/4d5c4272-6a8a-4bab-b322-9a85d1e227e7/topup" \
+  -H "Authorization: Bearer 1f970b85ec0c2ad03ff4cce906d90c3ec9ee28e58dc21868ee1658a26700c632" \
   -H "Content-Type: application/json" \
   -d '{
     "amount": 50000,
