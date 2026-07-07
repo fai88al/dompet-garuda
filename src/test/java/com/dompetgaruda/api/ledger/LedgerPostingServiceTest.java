@@ -1,15 +1,11 @@
 package com.dompetgaruda.api.ledger;
 
+import com.dompetgaruda.api.ApiIntegrationTestBase;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.List;
 import java.util.UUID;
@@ -30,26 +26,11 @@ import static org.assertj.core.api.Assertions.*;
  *       online balance as derived from the ledger.</li>
  * </ol>
  */
-@SpringBootTest
-@ActiveProfiles("api")
-@Testcontainers
-class LedgerPostingServiceTest {
-
-    @Container
-    @SuppressWarnings("resource")
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16")
-            .withDatabaseName("dompet")
-            .withUsername("dompet")
-            .withPassword("test");
+class LedgerPostingServiceTest extends ApiIntegrationTestBase {
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry registry) {
-        registry.add("SPRING_DATASOURCE_URL", postgres::getJdbcUrl);
-        registry.add("SPRING_DATASOURCE_USERNAME", postgres::getUsername);
-        registry.add("SPRING_DATASOURCE_PASSWORD", postgres::getPassword);
-        registry.add("admin.api-token",      () -> "test-admin-token");
-        registry.add("server.signing-key",   () -> "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
-        registry.add("pouch.max-amount-idr", () -> 500_000L);
+        registry.add("admin.api-token", () -> "test-admin-token");
     }
 
     @Autowired
