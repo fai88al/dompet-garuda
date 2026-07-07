@@ -19,8 +19,8 @@ import org.springframework.test.context.DynamicPropertySource;
 
 import java.nio.charset.StandardCharsets;
 import java.security.*;
+import java.security.spec.NamedParameterSpec;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.UUID;
 
@@ -49,30 +49,46 @@ class PouchLoadTest extends ApiIntegrationTestBase {
     // Must match pouch.max-amount-idr inherited from ApiIntegrationTestBase (3_000_000L)
     private static final long   MAX_AMOUNT  = 3_000_000L;
 
-    // Ed25519 keypair generated once per JVM run; private seed passed to Spring
-    // as server.signing-key so the server can sign and the test can verify.
+    /**
+     * KeyPair derived deterministically from {@link ApiIntegrationTestBase#SIGNING_KEY_SEED}.
+     *
+     * <p>Previously this was a randomly-generated keypair whose seed was fed back into Spring
+     * via a {@code @DynamicPropertySource} override of {@code server.signing-key}. That approach
+     * was fragile: Spring's {@code @DynamicPropertySource} method ordering in a class hierarchy
+     * does not guarantee the subclass value wins, so in CI the base class seed (zeros) was used
+     * for signing while this field held a different public key — making verification always fail.
+     *
+     * <p>Now: the base class owns {@code server.signing-key} unconditionally. This field derives
+     * its keypair from that same constant using {@code KeyPairGenerator} seeded with a
+     * {@code SecureRandom} that returns the known seed bytes. Ed25519 key generation internally
+     * calls {@code secureRandom.nextBytes(byte[32])} exactly once to produce the private scalar,
+     * so the resulting {@code getPublic()} is byte-for-byte the public key that corresponds to
+     * the private key {@code PouchService} loads from the same seed.
+     */
     static final KeyPair TEST_KEY_PAIR;
-    static final String  TEST_SIGNING_KEY_BASE64;
 
     static {
         try {
+            byte[] seed = Base64.getDecoder().decode(ApiIntegrationTestBase.SIGNING_KEY_SEED);
             KeyPairGenerator gen = KeyPairGenerator.getInstance("Ed25519");
+            // Seed the generator with the known private scalar so the resulting public key
+            // matches what PouchService uses to sign.  Ed25519 keygen calls nextBytes(32) once.
+            gen.initialize(NamedParameterSpec.ED25519, new SecureRandom() {
+                @Override public void nextBytes(byte[] out) {
+                    System.arraycopy(seed, 0, out, 0, Math.min(seed.length, out.length));
+                }
+            });
             TEST_KEY_PAIR = gen.generateKeyPair();
-            // PKCS8-encoded Ed25519 private key: 16-byte header + 32-byte seed = 48 bytes.
-            byte[] pkcs8   = TEST_KEY_PAIR.getPrivate().getEncoded();
-            byte[] seed    = Arrays.copyOfRange(pkcs8, 16, 48);
-            TEST_SIGNING_KEY_BASE64 = Base64.getEncoder().encodeToString(seed);
-        } catch (NoSuchAlgorithmException e) {
+        } catch (NoSuchAlgorithmException | InvalidAlgorithmParameterException e) {
             throw new ExceptionInInitializerError(e);
         }
     }
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry registry) {
-        registry.add("admin.api-token",    () -> ADMIN_TOKEN);
-        // Override the base class dummy key with the real generated keypair so
-        // the test can verify Ed25519 signatures produced by the server.
-        registry.add("server.signing-key", () -> TEST_SIGNING_KEY_BASE64);
+        registry.add("admin.api-token", () -> ADMIN_TOKEN);
+        // server.signing-key is set by ApiIntegrationTestBase.SIGNING_KEY_SEED.
+        // TEST_KEY_PAIR is derived from that same seed, so verification works.
     }
 
     @Autowired TestRestTemplate rest;

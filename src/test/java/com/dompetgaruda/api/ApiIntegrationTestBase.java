@@ -20,14 +20,23 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * {@code admin.api-token} — different values across test classes prevent Spring
  * from reusing the same application context and mixing test data.
  *
- * <p>The {@code server.signing-key} default here is a valid but inert Ed25519 seed
- * (32 zero bytes). {@link com.dompetgaruda.api.wallet.PouchLoadTest} overrides it
- * with a real generated keypair so it can verify signatures.
+ * <p>{@link #SIGNING_KEY_SEED} is the Ed25519 seed this base class configures for
+ * {@code server.signing-key}. {@link com.dompetgaruda.api.wallet.PouchLoadTest} derives
+ * its verification keypair from this constant so that the public key it uses to verify
+ * signatures matches exactly the private key PouchService uses to produce them.
+ * No subclass should override {@code server.signing-key}.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("api")
 @Testcontainers
 public abstract class ApiIntegrationTestBase {
+
+    /**
+     * Base64-encoded 32-byte Ed25519 private key seed used by {@code PouchService} in all
+     * integration tests. Exposed so {@link com.dompetgaruda.api.wallet.PouchLoadTest} can
+     * derive the matching public key for signature verification without overriding this property.
+     */
+    public static final String SIGNING_KEY_SEED = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
     @Container
     @SuppressWarnings("resource")
@@ -42,8 +51,7 @@ public abstract class ApiIntegrationTestBase {
         registry.add("SPRING_DATASOURCE_URL",      postgres::getJdbcUrl);
         registry.add("SPRING_DATASOURCE_USERNAME",  postgres::getUsername);
         registry.add("SPRING_DATASOURCE_PASSWORD",  postgres::getPassword);
-        // 32 zero-bytes — valid Ed25519 seed; lets PouchService start without a real key.
-        registry.add("server.signing-key",          () -> "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+        registry.add("server.signing-key",          () -> SIGNING_KEY_SEED);
         // Production max per POUCH_MAX_AMOUNT_IDR.
         registry.add("pouch.max-amount-idr",        () -> 3_000_000L);
     }
