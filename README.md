@@ -124,10 +124,10 @@ src/main/java/com/dompetgaruda/api/
   config/         # SecurityConfig (stateless Bearer-token auth)
   device/         # AdminController, AdminService, DTOs
   ledger/         # LedgerPostingService — double-entry posting (plain SQL), balance derivation, account helpers
-  sync/           # (coming) API ingest + worker settlement
-  reconciliation/ # (coming) pouch-vs-ledger reconciliation job
-  mqtt/           # (coming) Paho client, topic publishers
-  wallet/         # (coming) top-up, pouch provisioning
+  sync/           # api: SyncIngestController → sync_inbox; worker: inbox poller + settlement (PR7/PR8)
+  wallet/         # WalletController (top-up), PouchController (pouch load), DeviceBalanceController (balance)
+  reconciliation/ # (coming PR9) pouch-vs-ledger reconciliation job
+  mqtt/           # (coming PR10) Paho client, topic publishers
 
 src/main/resources/
   db/migration/          # Flyway migrations (V1__init.sql, …) — never edit applied files
@@ -161,17 +161,18 @@ docs/api-examples/       # curl scripts for every endpoint
 
 > FR numbers reference the PRD (`docs/PRD.md`).
 
-- [x] **Scaffold** — Spring Boot project, Flyway, dual-profile setup, Docker Compose (Postgres)
-- [x] **FR1 — Admin auth, user creation, device registration** — `POST /admin/users`, `POST /admin/devices`, Ed25519 public key storage, device token issuance
-- [x] **Ledger core** — `LedgerPostingService`: double-entry posting (plain SQL, balanced invariant enforced), balance derivation, SYSTEM/ONLINE/POUCH account helpers; Testcontainers integration tests; Swagger UI on api profile
-- [x] **FR2 — Top-up** — `POST /admin/users/{userId}/topup`, double-entry TOPUP posting (DEBIT system → CREDIT user.online), ledger-derived balance returned
-- [x] **FR3 / FR13 — Pouch load** — `POST /device/pouch/load` — debit user.online → credit device.pouch, Ed25519-signed offline certificate; 409 on duplicate active cert
-- [x] **FR14 — Balance enquiry** — `GET /device/balance`, device Bearer token auth, online balance derived from ledger SUM, pouch committed from active certificate; zero ledger writes enforced by test
-- [x] **FR5 — Sync ingest** — `POST /device/sync` — stores signed batch in sync_inbox (PENDING), returns 202 immediately; synced_after_expiry flagged when cert expired; zero ledger writes enforced by test
-- [ ] FR4/FR6–9/FR11/FR12 — Worker settlement — inbox poller, Ed25519 verify, ledger posting (OFFLINE_TRANSFER + POUCH_REFUND), MQTT sync-result
-- [ ] FR10 — Admin read endpoints (dashboard / user / device lookup)
-- [ ] MQTT notifications — cert-refresh hints, sync-result publish over TLS 8883
-- [ ] Reconciliation job — periodic pouch-vs-ledger check, flag mismatches
+- [x] **PR1 — Scaffold** — Spring Boot project, Flyway, dual-profile setup, Docker Compose (Postgres)
+- [x] **PR2 — FR1 — Admin auth, user creation, device registration** — `POST /admin/users`, `POST /admin/devices`, Ed25519 public key storage, device token issuance
+- [x] **PR3 — Ledger core** — `LedgerPostingService`: double-entry posting (plain SQL, balanced invariant enforced), balance derivation, SYSTEM/ONLINE/POUCH account helpers; Testcontainers integration tests; Swagger UI on api profile
+- [x] **PR4 — FR2 — Top-up** — `POST /admin/users/{userId}/topup`, double-entry TOPUP posting (DEBIT system → CREDIT user.online), ledger-derived balance returned
+- [x] **PR4b — FR14 — Balance enquiry / Cek Saldo** — `GET /device/balance`, device Bearer token auth, online balance derived from ledger SUM, pouch committed from active certificate; zero ledger writes enforced by test
+- [x] **PR5 — FR3/FR13 — Pouch provisioning** — `POST /device/pouch/load` — debit user.online → credit device.pouch, Ed25519-signed offline certificate; 409 on duplicate active cert
+- [x] **PR6 — FR5 — Sync ingest** — `POST /device/sync` — stores signed batch in sync_inbox (PENDING), returns 202 immediately; synced_after_expiry flagged when cert expired; zero ledger writes enforced by test
+- [ ] **PR7 — Worker bootstrap + inbox poller** — scheduled job polls sync_inbox (SELECT … FOR UPDATE SKIP LOCKED), keeps worker JVM alive
+- [ ] **PR8 — Settlement** — Ed25519 signature verify, OFFLINE_TRANSFER + POUCH_REFUND ledger postings, MQTT sync-result publish
+- [ ] **PR9 — Reconciliation** — periodic pouch-vs-ledger check, flag mismatches via flagged_transactions
+- [ ] **PR10 — MQTT** — Paho client, cert-refresh hints, sync-result publish over TLS 8883
+- [ ] **PR11 — Admin read endpoints** — dashboard / user / device lookup
 
 ---
 
