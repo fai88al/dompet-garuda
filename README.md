@@ -168,7 +168,7 @@ docs/api-examples/       # curl scripts for every endpoint
 - [x] **PR4b — FR14 — Balance enquiry / Cek Saldo** — `GET /device/balance`, device Bearer token auth, online balance derived from ledger SUM, pouch committed from active certificate; zero ledger writes enforced by test
 - [x] **PR5 — FR3/FR13 — Pouch provisioning** — `POST /device/pouch/load` — debit user.online → credit device.pouch, Ed25519-signed offline certificate; 409 on duplicate active cert
 - [x] **PR6 — FR5 — Sync ingest** — `POST /device/sync` — stores signed batch in sync_inbox (PENDING), returns 202 immediately; synced_after_expiry flagged when cert expired; zero ledger writes enforced by test
-- [ ] **PR7 — Worker bootstrap + inbox poller** — scheduled job polls sync_inbox (SELECT … FOR UPDATE SKIP LOCKED), keeps worker JVM alive
+- [x] **PR7 — Worker bootstrap + inbox poller** — scheduled job polls sync_inbox (SELECT … FOR UPDATE SKIP LOCKED), keeps worker JVM alive; batches remain PENDING until PR8 settlement
 - [ ] **PR8 — Settlement** — Ed25519 signature verify, OFFLINE_TRANSFER + POUCH_REFUND ledger postings, MQTT sync-result publish
 - [ ] **PR9 — Reconciliation** — periodic pouch-vs-ledger check, flag mismatches via flagged_transactions
 - [ ] **PR10 — MQTT** — Paho client, cert-refresh hints, sync-result publish over TLS 8883

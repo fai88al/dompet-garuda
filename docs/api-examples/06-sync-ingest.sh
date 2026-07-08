@@ -38,10 +38,14 @@ curl -s -X POST "$BASE_URL/device/sync" \
 #   "status":  "PENDING"
 # }
 #
-# The batch is stored in sync_inbox with status PENDING.
-# The worker (PR7/PR8) will poll sync_inbox, validate Ed25519 signatures,
-# post ledger entries (OFFLINE_TRANSFER + POUCH_REFUND), and publish the
-# settlement result to MQTT topic wallet/{deviceId}/sync-result.
+# The batch is stored in sync_inbox with status PENDING and remains PENDING
+# until PR8 settlement is deployed. As of PR7, the worker polls sync_inbox
+# every 5 s (SELECT … FOR UPDATE SKIP LOCKED), marks each row PROCESSING,
+# logs the batch_id, then resets it to PENDING — no ledger writes yet.
+#
+# PR8 will replace the stub with: Ed25519 signature verify, ledger postings
+# (OFFLINE_TRANSFER + POUCH_REFUND), and MQTT sync-result publish to
+# wallet/{deviceId}/sync-result.
 #
 # Important behaviours:
 #   * Late sync (uploaded after certificate expiry): accepted, stored with

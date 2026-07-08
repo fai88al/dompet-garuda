@@ -6,6 +6,10 @@ spring:
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  task:
+    scheduling:
+      pool:
+        size: 1
 
 springdoc:
   api-docs:
