@@ -41,5 +41,8 @@ public abstract class WorkerIntegrationTestBase {
         registry.add("SPRING_DATASOURCE_URL",      postgres::getJdbcUrl);
         registry.add("SPRING_DATASOURCE_USERNAME",  postgres::getUsername);
         registry.add("SPRING_DATASOURCE_PASSWORD",  postgres::getPassword);
+        // In production the api container runs Flyway before the worker starts (depends_on).
+        // In tests there is no api container, so we enable Flyway here to initialise the schema.
+        registry.add("spring.flyway.enabled",       () -> "true");
     }
 }

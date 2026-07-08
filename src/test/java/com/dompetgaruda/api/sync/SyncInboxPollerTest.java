@@ -77,23 +77,23 @@ class SyncInboxPollerTest extends WorkerIntegrationTestBase {
     // -------------------------------------------------------------------------
 
     @Test
-    void processOneRow_multiplePendingRows_processesEachInTurn() {
+    void processOneRow_multiplePendingRows_returnsTrueEachTime() {
         UUID deviceId = insertDevice();
         UUID batchId1 = insertPendingBatch(deviceId);
         UUID batchId2 = insertPendingBatch(deviceId);
 
-        assertThat(poller.processOneRow()).isTrue();  // first row
-        assertThat(poller.processOneRow()).isTrue();  // second row
-        assertThat(poller.processOneRow()).isFalse(); // inbox empty
+        // The stub resets each row to PENDING after processing, so subsequent calls
+        // keep finding rows — returning false is a PR8 concern (rows will be DONE then).
+        assertThat(poller.processOneRow()).isTrue();
+        assertThat(poller.processOneRow()).isTrue();
 
-        // Both rows are back to PENDING (stub resets status)
+        // Both rows are still PENDING (stub resets status to PENDING, no ledger writes)
         Integer pending = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM sync_inbox WHERE device_id = ? AND status = 'PENDING'",
                 Integer.class, deviceId);
         assertThat(pending).isEqualTo(2);
 
-        cleanup(batchId1, deviceId);
-        cleanup(batchId2, deviceId);
+        cleanupDevice(deviceId);
     }
 
     // -------------------------------------------------------------------------
@@ -143,13 +143,20 @@ class SyncInboxPollerTest extends WorkerIntegrationTestBase {
     private UUID insertDevice() {
         UUID userId   = UUID.randomUUID();
         UUID deviceId = UUID.randomUUID();
+        // Unique phone so multiple insertDevice() calls don't collide on the UNIQUE constraint.
+        String phone = "+62900" + System.nanoTime() % 100_000_000L;
+        // public_key is UNIQUE (V2 migration); generate a distinct value per device.
+        String publicKey = "pk-worker-" + deviceId.toString().substring(0, 8);
+        // device_token_hash is VARCHAR(64) NOT NULL UNIQUE (V2 migration).
+        String tokenHash = UUID.randomUUID().toString().replace("-", "")
+                         + UUID.randomUUID().toString().replace("-", "");
         jdbc.update(
                 "INSERT INTO users (user_id, full_name, phone) VALUES (?, 'Worker Test User', ?)",
-                userId, "+62900" + System.nanoTime() % 100_000_000L);
+                userId, phone);
         jdbc.update(
-                "INSERT INTO devices (device_id, user_id, public_key, device_label) " +
-                "VALUES (?, ?, 'pk-worker-test', 'Worker Test Device')",
-                deviceId, userId);
+                "INSERT INTO devices (device_id, user_id, public_key, device_label, device_token_hash) " +
+                "VALUES (?, ?, ?, 'Worker Test Device', ?)",
+                deviceId, userId, publicKey, tokenHash);
         return deviceId;
     }
 
@@ -160,6 +167,15 @@ class SyncInboxPollerTest extends WorkerIntegrationTestBase {
                 "VALUES (?, ?, '[]'::jsonb, 'PENDING')",
                 batchId, deviceId);
         return batchId;
+    }
+
+    /** Deletes all sync_inbox rows for a device, then the device and its user. */
+    private void cleanupDevice(UUID deviceId) {
+        List<UUID> userIds = jdbc.queryForList(
+                "SELECT user_id FROM devices WHERE device_id = ?", UUID.class, deviceId);
+        jdbc.update("DELETE FROM sync_inbox WHERE device_id = ?", deviceId);
+        jdbc.update("DELETE FROM devices WHERE device_id = ?", deviceId);
+        userIds.forEach(uid -> jdbc.update("DELETE FROM users WHERE user_id = ?", uid));
     }
 
     private void cleanup(UUID batchId, UUID deviceId) {
