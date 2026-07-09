@@ -126,7 +126,7 @@ src/main/java/com/dompetgaruda/api/
   ledger/         # LedgerPostingService — double-entry posting (plain SQL), balance derivation, account helpers
   sync/           # api: SyncIngestController → sync_inbox; worker: inbox poller + settlement (PR7/PR8)
   wallet/         # WalletController (top-up), PouchController (pouch load), DeviceBalanceController (balance)
-  reconciliation/ # (coming PR9) pouch-vs-ledger reconciliation job
+  reconciliation/ # PR9: hourly pouch-vs-ledger reconciliation job (ShedLock-guarded)
   mqtt/           # (coming PR10) Paho client, topic publishers
 
 src/main/resources/
@@ -170,7 +170,7 @@ docs/api-examples/       # curl scripts for every endpoint
 - [x] **PR6 — FR5 — Sync ingest** — `POST /device/sync` — stores signed batch in sync_inbox (PENDING), returns 202 immediately; synced_after_expiry flagged when cert expired; zero ledger writes enforced by test
 - [x] **PR7 — Worker bootstrap + inbox poller** — scheduled job polls sync_inbox (SELECT … FOR UPDATE SKIP LOCKED), keeps worker JVM alive
 - [x] **PR8 — FR4/FR6/FR7/FR8/FR11/FR12 — Settlement** — Ed25519 signature verify per transaction, OFFLINE_TRANSFER + POUCH_REFUND double-entry postings, COUNTER_REPLAY/BAD_SIGNATURE/OVER_LIMIT/MALFORMED flagging; 10 Testcontainers integration tests
-- [ ] **PR9 — Reconciliation** — periodic pouch-vs-ledger check, flag mismatches via flagged_transactions
+- [x] **PR9 — Reconciliation** — periodic pouch-vs-ledger check, flag mismatches via flagged_transactions
 - [ ] **PR10 — MQTT** — Paho client, cert-refresh hints, sync-result publish over TLS 8883
 - [ ] **PR11 — Admin read endpoints** — dashboard / user / device lookup
 
