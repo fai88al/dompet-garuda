@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
- * Integration tests for the worker inbox poller (PR7 stub).
+ * Integration tests for the worker inbox poller.
  *
  * <p>Runs with the {@code worker} profile and a real Testcontainers Postgres instance.
  *
@@ -25,16 +25,12 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *
  * <p>Cases covered:
  * <ol>
- *   <li>PENDING row → PROCESSING → PENDING stub flow (no ledger writes, §7 rule 5).</li>
+ *   <li>Malformed batch (invalid JSON for SyncBatchRequest) → FAILED + MALFORMED flag, no ledger writes.</li>
  *   <li>Empty inbox → returns {@code false}, no exception.</li>
- *   <li>Multiple PENDING rows → {@code processOneRow()} drains them one at a time.</li>
- *   <li>ShedLock row written to {@code shedlock} table after {@code pollInbox()} runs (§7
- *       invariant 7).</li>
- *   <li>Zero ledger writes — §7 rule 5: only PR8 settlement may post to the ledger.</li>
+ *   <li>Multiple PENDING rows → each settles to FAILED (malformed), processOneRow returns true each time.</li>
+ *   <li>ShedLock row written to {@code shedlock} table after {@code pollInbox()} runs (§7 invariant 7).</li>
+ *   <li>Zero ledger writes for malformed batch (§7 rule 5).</li>
  * </ol>
- *
- * <p>Poison-pill (exception → FAILED) path is deferred to PR8, where real signature
- * verification introduces natural failure modes that can be meaningfully exercised.
  */
 class SyncInboxPollerTest extends WorkerIntegrationTestBase {
 
@@ -42,11 +38,11 @@ class SyncInboxPollerTest extends WorkerIntegrationTestBase {
     @Autowired JdbcTemplate    jdbc;
 
     // -------------------------------------------------------------------------
-    // Stub flow: PENDING → PROCESSING → PENDING
+    // Malformed batch → FAILED (no stub reset — real settlement rejects bad JSON)
     // -------------------------------------------------------------------------
 
     @Test
-    void processOneRow_pendingRow_setsStatusBackToPending() {
+    void processOneRow_malformedBatch_setsStatusFailed() {
         UUID deviceId = insertDevice();
         UUID batchId  = insertPendingBatch(deviceId);
 
@@ -55,7 +51,8 @@ class SyncInboxPollerTest extends WorkerIntegrationTestBase {
         assertThat(found).isTrue();
         String status = jdbc.queryForObject(
                 "SELECT status FROM sync_inbox WHERE batch_id = ?", String.class, batchId);
-        assertThat(status).isEqualTo("PENDING");
+        // Settlement fails to parse '[]' as SyncBatchRequest → FAILED + MALFORMED flag
+        assertThat(status).isEqualTo("FAILED");
 
         cleanup(batchId, deviceId);
     }
@@ -82,16 +79,14 @@ class SyncInboxPollerTest extends WorkerIntegrationTestBase {
         UUID batchId1 = insertPendingBatch(deviceId);
         UUID batchId2 = insertPendingBatch(deviceId);
 
-        // The stub resets each row to PENDING after processing, so subsequent calls
-        // keep finding rows — returning false is a PR8 concern (rows will be DONE then).
         assertThat(poller.processOneRow()).isTrue();
         assertThat(poller.processOneRow()).isTrue();
 
-        // Both rows are still PENDING (stub resets status to PENDING, no ledger writes)
+        // Both rows end up FAILED (malformed JSON → settlement fails → FAILED)
         Integer pending = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM sync_inbox WHERE device_id = ? AND status = 'PENDING'",
                 Integer.class, deviceId);
-        assertThat(pending).isEqualTo(2);
+        assertThat(pending).isEqualTo(0);
 
         cleanupDevice(deviceId);
     }
@@ -117,7 +112,7 @@ class SyncInboxPollerTest extends WorkerIntegrationTestBase {
     // -------------------------------------------------------------------------
 
     @Test
-    void processOneRow_pendingRow_zeroLedgerWrites() {
+    void processOneRow_malformedBatch_zeroLedgerWrites() {
         UUID deviceId = insertDevice();
         UUID batchId  = insertPendingBatch(deviceId);
 
@@ -127,10 +122,10 @@ class SyncInboxPollerTest extends WorkerIntegrationTestBase {
         poller.processOneRow();
 
         assertThat(countRows("ledger_entries"))
-                .as("ledger_entries must not change during stub polling (§7 rule 5)")
+                .as("ledger_entries must not change for a malformed batch (§7 rule 5)")
                 .isEqualTo(entriesBefore);
         assertThat(countRows("ledger_transactions"))
-                .as("ledger_transactions must not change during stub polling (§7 rule 5)")
+                .as("ledger_transactions must not change for a malformed batch (§7 rule 5)")
                 .isEqualTo(txnsBefore);
 
         cleanup(batchId, deviceId);
@@ -169,19 +164,23 @@ class SyncInboxPollerTest extends WorkerIntegrationTestBase {
         return batchId;
     }
 
-    /** Deletes all sync_inbox rows for a device, then the device and its user. */
+    /** Deletes all sync_inbox rows (and dependent flagged_transactions) for a device, then the device and its user. */
     private void cleanupDevice(UUID deviceId) {
         List<UUID> userIds = jdbc.queryForList(
                 "SELECT user_id FROM devices WHERE device_id = ?", UUID.class, deviceId);
+        // FK order: flagged_transactions → sync_inbox → devices → users
+        jdbc.update("DELETE FROM flagged_transactions WHERE batch_id IN " +
+                    "(SELECT batch_id FROM sync_inbox WHERE device_id = ?)", deviceId);
         jdbc.update("DELETE FROM sync_inbox WHERE device_id = ?", deviceId);
         jdbc.update("DELETE FROM devices WHERE device_id = ?", deviceId);
         userIds.forEach(uid -> jdbc.update("DELETE FROM users WHERE user_id = ?", uid));
     }
 
     private void cleanup(UUID batchId, UUID deviceId) {
-        // Resolve FK before deleting — device row must still exist for the userId lookup.
         List<UUID> userIds = jdbc.queryForList(
                 "SELECT user_id FROM devices WHERE device_id = ?", UUID.class, deviceId);
+        // FK order: flagged_transactions → sync_inbox → devices → users
+        jdbc.update("DELETE FROM flagged_transactions WHERE batch_id = ?", batchId);
         jdbc.update("DELETE FROM sync_inbox WHERE batch_id = ?", batchId);
         jdbc.update("DELETE FROM devices WHERE device_id = ?", deviceId);
         userIds.forEach(uid -> jdbc.update("DELETE FROM users WHERE user_id = ?", uid));

@@ -5,8 +5,6 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * Shared base class for all worker-profile integration tests.
@@ -20,21 +18,28 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  * {@code admin.api-token}, {@code server.signing-key}, or {@code pouch.max-amount-idr} are
  * annotated {@code @Profile("api")} and are never loaded by the worker context.
  *
+ * <p>The container is started once in a static initializer and lives for the entire JVM session.
+ * This prevents the stop/restart between subclasses that would leave the Spring context pointing
+ * at a fresh empty database while the cached context assumes the schema already exists.
+ *
  * <p>Subclasses may add their own {@code @DynamicPropertySource} for test-specific overrides,
  * but must not override the datasource keys set here.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @ActiveProfiles("worker")
-@Testcontainers
 public abstract class WorkerIntegrationTestBase {
 
-    @Container
+    protected static final PostgreSQLContainer<?> postgres = startPostgres();
+
     @SuppressWarnings("resource")
-    protected static final PostgreSQLContainer<?> postgres =
-            new PostgreSQLContainer<>("postgres:16")
-                    .withDatabaseName("dompet")
-                    .withUsername("dompet")
-                    .withPassword("test");
+    private static PostgreSQLContainer<?> startPostgres() {
+        PostgreSQLContainer<?> c = new PostgreSQLContainer<>("postgres:16")
+                .withDatabaseName("dompet")
+                .withUsername("dompet")
+                .withPassword("test");
+        c.start();
+        return c;
+    }
 
     @DynamicPropertySource
     static void baseProps(DynamicPropertyRegistry registry) {
