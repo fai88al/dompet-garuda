@@ -55,7 +55,23 @@ services:
       api:
         condition: service_healthy
 
+  caddy:
+    image: caddy:2-alpine
+    container_name: dompet-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_logs:/var/log/caddy
+    depends_on:
+      api:
+        condition: service_healthy
+
 volumes:
   pgdata:
   caddy_data:
-  caddy_config:
+  caddy_logs:

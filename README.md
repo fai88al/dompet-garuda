@@ -18,6 +18,7 @@ One codebase, one Docker image, two runtime containers distinguished only by Spr
 - Maven 3.x (or use the included `./mvnw` wrapper — no install needed)
 - Docker Desktop (for the Postgres container and Testcontainers in tests)
 - (Optional) SSH tunnel to a remote Postgres if not running Docker locally
+- (Production) A domain name (`api.dompetgaruda.com`) pointing to the VPS — required for Caddy to obtain a TLS certificate from Let's Encrypt on first deploy
 
 ---
 
@@ -42,6 +43,8 @@ docker compose ps   # wait until postgres is healthy
 ```
 
 The API starts on **port 8080**. Swagger UI is available at `http://localhost:8080/swagger-ui.html`.
+
+> **Production HTTPS:** in the deployed stack, Caddy sits in front of the API and handles TLS automatically via Let's Encrypt. No manual certificate configuration is needed — push to `main` and the deploy workflow handles it.
 
 ---
 
