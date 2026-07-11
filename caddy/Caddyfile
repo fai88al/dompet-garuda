@@ -1,7 +1,7 @@
 api.dompetgaruda.com {
-    reverse_proxy api:8080
+	reverse_proxy api:8080
 }
 
 mqtt.dompetgaruda.com {
-    respond "MQTT broker — connect on port 8883 using TLS" 200
+	respond "MQTT broker - connect on port 8883" 200
 }
