@@ -94,6 +94,12 @@ Admin endpoints require `Authorization: Bearer <ADMIN_API_TOKEN>`. Device endpoi
 | `POST` | `/admin/users` | Create a user + open ONLINE ledger account | Admin |
 | `POST` | `/admin/devices` | Register a device (returns token once) | Admin |
 | `POST` | `/admin/users/{userId}/topup` | Credit user's ONLINE balance (TOPUP posting) | Admin |
+| `GET` | `/admin/users` | List all users with derived online balances and device counts | Admin |
+| `GET` | `/admin/users/{userId}` | Single user detail with devices list; 404 if not found | Admin |
+| `GET` | `/admin/devices` | List all devices with active certificate or null | Admin |
+| `GET` | `/admin/certificates` | List all offline certificates DESC; optional `?status=` filter | Admin |
+| `GET` | `/admin/sync` | Last 50 sync_inbox rows (no raw_payload); optional `?limit=N` (max 200) | Admin |
+| `GET` | `/admin/flagged` | Unresolved flagged rows by default; optional `?resolved=true` | Admin |
 | `POST` | `/device/pouch/load` | Load funds into offline pouch; issues signed certificate (FR3/FR13) | Device |
 | `GET` | `/device/balance` | Return online balance + pouch committed (FR14) | Device |
 | `POST` | `/device/sync` | Upload signed offline transaction batch; stored in sync_inbox (FR5) | Device |
@@ -125,6 +131,7 @@ src/main/java/com/dompetgaruda/api/
   auth/           # AdminTokenFilter, DeviceTokenService, DeviceTokenVerifier
   common/         # JPA entities (User, Device, Account), repositories
   config/         # SecurityConfig (stateless Bearer-token auth)
+  admin/          # AdminDashboardController, AdminDashboardService, DTOs (FR10 read endpoints)
   device/         # AdminController, AdminService, DTOs
   ledger/         # LedgerPostingService — double-entry posting (plain SQL), balance derivation, account helpers
   sync/           # api: SyncIngestController → sync_inbox; worker: inbox poller + settlement (PR7/PR8)
@@ -175,7 +182,7 @@ docs/api-examples/       # curl scripts for every endpoint
 - [x] **PR8 — FR4/FR6/FR7/FR8/FR11/FR12 — Settlement** — Ed25519 signature verify per transaction, OFFLINE_TRANSFER + POUCH_REFUND double-entry postings, COUNTER_REPLAY/BAD_SIGNATURE/OVER_LIMIT/MALFORMED flagging; 10 Testcontainers integration tests
 - [x] **PR9 — Reconciliation** — periodic pouch-vs-ledger check, flag mismatches via flagged_transactions
 - [ ] **PR10 — MQTT** — Paho client, cert-refresh hints, sync-result publish over TLS 8883
-- [ ] **PR11 — Admin read endpoints** — dashboard / user / device lookup
+- [x] **PR11 — FR10 — Admin read endpoints** — GET /admin/users, /admin/users/{id}, /admin/devices, /admin/certificates, /admin/sync, /admin/flagged
 
 ---
 
