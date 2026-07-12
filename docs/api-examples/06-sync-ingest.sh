@@ -46,6 +46,14 @@ curl -s -X POST "$BASE_URL/device/sync" \
 # flagged_transactions with a reason code (COUNTER_REPLAY, BAD_SIGNATURE,
 # OVER_LIMIT, MALFORMED) and never posted to the ledger.
 #
+# After the DB commit the worker publishes a sync-result notification to
+# MQTT topic  wallet/{deviceId}/sync-result  (QoS 1, TLS port 8883):
+#   { "batchId": "<batchId>", "status": "SETTLED" }   on success
+#   { "batchId": "<batchId>", "status": "FAILED",
+#     "detail": "<reason>" }                          on failure
+# The device subscribes to this topic to learn the outcome without polling.
+# MQTT carries no financial authority — it is a hint only (§7.8).
+#
 # Important behaviours:
 #   * Late sync (uploaded after certificate expiry): accepted, stored with
 #     synced_after_expiry = true. The worker decides settlement.

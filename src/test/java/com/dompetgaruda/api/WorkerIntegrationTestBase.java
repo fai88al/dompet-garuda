@@ -49,5 +49,10 @@ public abstract class WorkerIntegrationTestBase {
         // In production the api container runs Flyway before the worker starts (depends_on).
         // In tests there is no api container, so we enable Flyway here to initialise the schema.
         registry.add("spring.flyway.enabled",       () -> "true");
+        // Point MQTT at a non-existent local port so MqttConfig starts in degraded mode
+        // (connect() fails, WARNING logged, client returned disconnected — graceful degradation).
+        registry.add("mqtt.broker-url",             () -> "tcp://localhost:11883");
+        registry.add("mqtt.client-id",              () -> "test-worker-01");
+        registry.add("mqtt.password",               () -> "");
     }
 }
