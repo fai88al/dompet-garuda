@@ -51,9 +51,9 @@ services:
       SPRING_DATASOURCE_USERNAME: dompet
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
       POUCH_MAX_AMOUNT_IDR: ${POUCH_MAX_AMOUNT_IDR}
-    depends_on:
-      api:
-        condition: service_healthy
+      MQTT_BROKER_URL: ${MQTT_BROKER_URL}
+      MQTT_CLIENT_ID: ${MQTT_CLIENT_ID}
+      MQTT_WORKER_PASSWORD: ${MQTT_WORKER_PASSWORD}
 
   caddy:
     image: caddy:2-alpine
