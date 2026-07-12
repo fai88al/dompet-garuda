@@ -71,27 +71,32 @@ services:
       api:
         condition: service_healthy
 
-  # mosquitto:
-  #   image: eclipse-mosquitto:2
-  #   container_name: dompet-mosquitto
-  #   restart: unless-stopped
-  #   ports:
-  #     - "8883:8883"
-  #     - "127.0.0.1:1883:1883"
-  #   volumes:
-  #     - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-  #     - ./mosquitto/config/passwd:/mosquitto/config/passwd:ro
-  #     - ./mosquitto/config/acl:/mosquitto/config/acl:ro
-  #     - mosquitto_data:/mosquitto/data
-  #     - mosquitto_log:/mosquitto/log
-  #     - caddy_data:/caddy_data:ro
-  #   depends_on:
-  #     caddy:
-  #       condition: service_started        
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: dompet-mosquitto
+    restart: unless-stopped
+    user: root
+    ports:
+      - "8883:8883"
+      - "127.0.0.1:1883:1883"
+    volumes:
+      - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/config/passwd:/mosquitto/config/passwd:ro
+      - ./mosquitto/config/acl:/mosquitto/config/acl:ro
+      - ./mosquitto/start.sh:/start.sh:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_certs:/mosquitto/certs
+      - caddy_data:/caddy_data:ro
+    entrypoint: ["/bin/sh", "/start.sh"]
+    depends_on:
+      caddy:
+        condition: service_started
 
 volumes:
   pgdata:
   caddy_data:
+    external: true
+    name: dompet_caddy_data
   caddy_logs:
-  # mosquitto_data:
-  # mosquitto_log:
+  mosquitto_data:
+  mosquitto_certs:

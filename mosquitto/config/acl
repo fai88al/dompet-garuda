@@ -1,0 +1,4 @@
+user dompet-worker
+topic readwrite wallet/#
+
+pattern readwrite wallet/%u/#
