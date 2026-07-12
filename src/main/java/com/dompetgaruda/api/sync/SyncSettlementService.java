@@ -4,11 +4,13 @@ import com.dompetgaruda.api.common.Ed25519Verifier;
 import com.dompetgaruda.api.ledger.LedgerEntry;
 import com.dompetgaruda.api.ledger.LedgerPostingService;
 import com.dompetgaruda.api.ledger.PostingRequest;
+import com.dompetgaruda.api.mqtt.MqttPublisherService;
 import com.dompetgaruda.api.sync.dto.SyncBatchRequest;
 import com.dompetgaruda.api.sync.dto.SyncOfflineTxnRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -53,6 +55,9 @@ public class SyncSettlementService {
     private final LedgerPostingService ledger;
     private final Ed25519Verifier verifier;
     private final ObjectMapper objectMapper;
+    // Null in the api profile — MqttPublisherService is @Profile("worker") only
+    @Autowired(required = false)
+    private MqttPublisherService mqttPublisher;
 
     public SyncSettlementService(JdbcTemplate jdbc, PlatformTransactionManager txManager,
                                   LedgerPostingService ledger, Ed25519Verifier verifier,
@@ -99,6 +104,9 @@ public class SyncSettlementService {
             log.warn("Batch {} has malformed payload", batchId);
             markFailed(batchId, "Malformed payload: " + e.getMessage());
             insertFlag(null, batchId, null, "MALFORMED", "JSON parse failed: " + e.getMessage());
+            if (mqttPublisher != null) {
+                mqttPublisher.publishSyncResult(deviceId.toString(), batchId.toString(), "FAILED", "Malformed payload");
+            }
             return;
         }
 
@@ -114,6 +122,9 @@ public class SyncSettlementService {
             markFailed(batchId, "No valid certificate found: " + batch.certificateId());
             insertFlag(null, batchId, batch.certificateId(), "MALFORMED",
                     "Certificate not found or already settled/revoked");
+            if (mqttPublisher != null) {
+                mqttPublisher.publishSyncResult(deviceId.toString(), batchId.toString(), "FAILED", "No valid certificate");
+            }
             return;
         }
 
@@ -161,6 +172,11 @@ public class SyncSettlementService {
                     "UPDATE sync_inbox SET status = 'DONE', processed_at = now() " +
                     "WHERE batch_id = ?", batchId);
         });
+
+        // Notify device of settlement outcome — fire-and-forget, must not throw (§7.8)
+        if (mqttPublisher != null) {
+            mqttPublisher.publishSyncResult(deviceId.toString(), batchId.toString(), "SETTLED", null);
+        }
 
         // 6. Flag all settled transactions if batch arrived after expiry
         if (syncedAfterExpiry) {

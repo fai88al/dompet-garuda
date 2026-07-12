@@ -2,6 +2,7 @@ package com.dompetgaruda.api.wallet;
 
 import com.dompetgaruda.api.auth.DeviceTokenVerifier;
 import com.dompetgaruda.api.common.entity.Device;
+import com.dompetgaruda.api.mqtt.MqttPublisherService;
 import com.dompetgaruda.api.wallet.dto.PouchLoadRequest;
 import com.dompetgaruda.api.wallet.dto.PouchLoadResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -9,6 +10,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -32,6 +34,9 @@ public class PouchController {
 
     private final DeviceTokenVerifier verifier;
     private final PouchService        pouchService;
+    // Null in the api profile (MqttPublisherService is @Profile("worker")); optional cert-refresh hint
+    @Autowired(required = false)
+    private MqttPublisherService mqttPublisher;
 
     public PouchController(DeviceTokenVerifier verifier, PouchService pouchService) {
         this.verifier     = verifier;
@@ -56,7 +61,12 @@ public class PouchController {
             @RequestHeader(name = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
             @Valid @RequestBody PouchLoadRequest request) {
         Device device = resolveDevice(authHeader);
-        return pouchService.load(device, request);
+        PouchLoadResponse response = pouchService.load(device, request);
+        // @Transactional load() has committed; send cert-refresh hint (fire-and-forget, §7.8)
+        if (mqttPublisher != null) {
+            mqttPublisher.publishCertRefresh(device.getDeviceId().toString());
+        }
+        return response;
     }
 
     private Device resolveDevice(String authHeader) {

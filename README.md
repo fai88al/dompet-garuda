@@ -137,7 +137,7 @@ src/main/java/com/dompetgaruda/api/
   sync/           # api: SyncIngestController → sync_inbox; worker: inbox poller + settlement (PR7/PR8)
   wallet/         # WalletController (top-up), PouchController (pouch load), DeviceBalanceController (balance)
   reconciliation/ # PR9: hourly pouch-vs-ledger reconciliation job (ShedLock-guarded)
-  mqtt/           # (coming PR10) Paho client, topic publishers
+  mqtt/           # MqttConfig (@Profile worker), MqttPublisherService — sync-result + cert-refresh (PR10)
 
 src/main/resources/
   db/migration/          # Flyway migrations (V1__init.sql, …) — never edit applied files
@@ -181,7 +181,7 @@ docs/api-examples/       # curl scripts for every endpoint
 - [x] **PR7 — Worker bootstrap + inbox poller** — scheduled job polls sync_inbox (SELECT … FOR UPDATE SKIP LOCKED), keeps worker JVM alive
 - [x] **PR8 — FR4/FR6/FR7/FR8/FR11/FR12 — Settlement** — Ed25519 signature verify per transaction, OFFLINE_TRANSFER + POUCH_REFUND double-entry postings, COUNTER_REPLAY/BAD_SIGNATURE/OVER_LIMIT/MALFORMED flagging; 10 Testcontainers integration tests
 - [x] **PR9 — Reconciliation** — periodic pouch-vs-ledger check, flag mismatches via flagged_transactions
-- [ ] **PR10 — MQTT** — Paho client, cert-refresh hints, sync-result publish over TLS 8883
+- [x] **PR10 — MQTT** — Paho client (`MqttConfig`), `MqttPublisherService`: `publishSyncResult` (after settlement commit) + `publishCertRefresh` (after pouch load commit); graceful degradation when broker is unreachable; 2 integration tests (degradation + Mockito mock verify)
 - [x] **PR11 — FR10 — Admin read endpoints** — GET /admin/users, /admin/users/{id}, /admin/devices, /admin/certificates, /admin/sync, /admin/flagged
 
 ---

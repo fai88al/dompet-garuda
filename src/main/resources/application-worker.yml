@@ -14,3 +14,9 @@ spring:
 springdoc:
   api-docs:
     enabled: false
+
+mqtt:
+  broker-url: ${MQTT_BROKER_URL:ssl://mqtt.dompetgaruda.com:8883}
+  client-id: ${MQTT_CLIENT_ID:dompet-worker-01}
+  username: dompet-worker
+  password: ${MQTT_WORKER_PASSWORD:}
