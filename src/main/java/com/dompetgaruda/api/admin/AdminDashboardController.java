@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.UUID;
+import org.springframework.http.ResponseEntity;
 
 /**
  * Read-only admin dashboard endpoints (FR10).
@@ -99,5 +100,20 @@ public class AdminDashboardController {
             @Parameter(description = "Set to true to include resolved flags alongside unresolved ones.")
             @RequestParam(defaultValue = "false") boolean resolved) {
         return service.listFlagged(resolved);
+    }
+
+    @PatchMapping("/flagged/{flagId}/resolve")
+    @Operation(
+            summary = "Resolve a flagged transaction (FR16).",
+            description = "Marks the flag as resolved. Idempotency note: returns 409 if already resolved.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Flag resolved."),
+        @ApiResponse(responseCode = "401", description = "Missing or invalid admin Bearer token."),
+        @ApiResponse(responseCode = "404", description = "Flag not found."),
+        @ApiResponse(responseCode = "409", description = "Flag already resolved.")
+    })
+    public ResponseEntity<FlagResolveResponse> resolveFlag(
+            @Parameter(description = "Flag ID (BIGINT primary key).") @PathVariable long flagId) {
+        return ResponseEntity.ok(service.resolveFlag(flagId));
     }
 }

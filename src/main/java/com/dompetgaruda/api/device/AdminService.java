@@ -13,6 +13,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.Set;
+import java.util.UUID;
+
 @Service
 public class AdminService {
 
@@ -62,6 +65,30 @@ public class AdminService {
                 user.getStatus(),
                 online.getAccountId(),
                 user.getCreatedAt());
+    }
+
+    private static final Set<String> VALID_STATUSES = Set.of("ACTIVE", "SUSPENDED", "LOCKED");
+
+    /**
+     * Updates a device's status (FR17).
+     * Application-level validation returns 400 before hitting the DB CHECK constraint.
+     * JPA @PreUpdate on Device sets updatedAt automatically.
+     */
+    @Transactional
+    public UpdateDeviceStatusResponse updateDeviceStatus(UUID deviceId, UpdateDeviceStatusRequest req) {
+        if (!VALID_STATUSES.contains(req.status())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Invalid status: " + req.status() + ". Must be one of: ACTIVE, SUSPENDED, LOCKED");
+        }
+
+        Device device = deviceRepository.findById(deviceId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Device not found: " + deviceId));
+
+        device.setStatus(req.status());
+        deviceRepository.save(device);
+
+        return new UpdateDeviceStatusResponse(device.getDeviceId(), device.getStatus(), device.getUpdatedAt());
     }
 
     /**
