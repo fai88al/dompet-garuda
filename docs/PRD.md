@@ -32,17 +32,18 @@ This document defines what the **prototype** must do. Anything not listed in §4
 - **NG1.** Not production-grade security or compliance.
 - **NG2.** Not real money or a real payment network. Balances are prototype tokens in IDR.
 - **NG3.** No multi-hop offline re-spend.
-- **NG4.** No consumer app; admin view only.
+- **NG4.** No consumer app; admin backoffice only (see §11).
 - **NG5.** No horizontal scaling or multi-region.
 - **NG6.** No KYC or dispute resolution.
 - **NG7.** Balance enquiry returns current figures only — no history or statements.
+- **NG8.** No writer role, article management, or landing page — these are phase 3.
 
 ---
 
 ## 3. Users
 
 - **Device holder.** Owns a Dompet device, checks balance, tops up, transacts offline.
-- **Admin.** Registers devices, tops up balances, views the read-only dashboard.
+- **Admin.** Registers devices, tops up balances, manages users and flags via backoffice panel.
 
 ---
 
@@ -102,14 +103,15 @@ This document defines what the **prototype** must do. Anything not listed in §4
 
 ### 4.8 Admin read endpoints
 - Read-only endpoints: devices, balances, certs, syncs, flagged transactions.
-- UI is optional and deferred. Backend endpoints are in scope.
+- Consumed by the backoffice panel (§11).
 
 ---
 
 ## 5. Out of scope
 
 No real money, no real QRIS/bank rail, no compliance, no scaling, no consumer app, no multi-hop
-offline re-spend, no transaction history. Build §4 only.
+offline re-spend, no transaction history, no writer role, no articles, no landing page.
+Build §4 and §11 only.
 
 ---
 
@@ -136,13 +138,22 @@ offline re-spend, no transaction history. Build §4 only.
 - **FR12.** Batch synced after cert expiry is settled but flagged `EXPIRED_CERT_LATE_SYNC`.
 - **FR13.** At most one `ACTIVE` cert per device; new pouch-load rejected if one exists.
 - **FR14.** Balance enquiry returns online balance + pouch committed without any ledger writes.
+- **FR15.** POST /admin/auth/login accepts the configured password and returns the admin token.
+  Returns 401 on wrong password. Returns 429 after 5 failed attempts from the same IP
+  within 5 minutes.
+- **FR16.** PATCH /admin/flagged/{flagId}/resolve sets resolved=true and resolved_at=now().
+  Returns 404 if not found. Returns 409 if already resolved.
+- **FR17.** PATCH /admin/devices/{deviceId}/status updates device status to
+  ACTIVE, SUSPENDED, or LOCKED. Returns 404 if not found. Returns 400 for invalid status.
+  A SUSPENDED device's auth requests return 401 immediately.
 
 ---
 
 ## 7. Technical constraints
 
 - Hostinger KVM2: 2 vCPU, 8 GB RAM, Ubuntu 24.04.
-- Stack: Java 21 / Spring Boot 3.x / PostgreSQL 16 / Mosquitto / Caddy / Docker Compose.
+- Backend stack: Java 21 / Spring Boot 3.x / PostgreSQL 16 / Mosquitto / Caddy / Docker Compose.
+- Frontend (backoffice): Next.js (App Router) / Bun / shadcn/ui / Tailwind CSS / next-themes.
 - ESP32 firmware: C/C++, BLE + Ed25519 on-device.
 - Monitoring: Spring Boot Actuator + Uptime Kuma; optional Grafana Cloud agent.
 - Backups: nightly restic → Cloudflare R2 / Backblaze B2 + Hostinger snapshots.
@@ -158,6 +169,8 @@ offline re-spend, no transaction history. Build §4 only.
 4. Cek Saldo figures reconcile correctly across offline-spend-then-sync cycle.
 5. Full stack runs within 8 GB without swapping under demo load.
 6. Backup can be restored (tested at least once before demo).
+7. Admin can log into the backoffice, create a user, register a device, top up, and view
+   flagged transactions — all from the UI without touching the terminal.
 
 ---
 
@@ -189,7 +202,7 @@ to a wrong number in a future real-money deployment.
 
 ⚠️ This was decided casually for the prototype with no documented rationale. With 3 devices
 per user and 24h cert validity, maximum offline exposure per user is Rp 9,000,000. Must be
-revisited with a proper risk review before any real-money deployment. PR5 is now unblocked.
+revisited with a proper risk review before any real-money deployment.
 
 ---
 
@@ -204,15 +217,57 @@ revisited with a proper risk review before any real-money deployment. PR5 is now
 | 4b | PR2 — Auth + device registration (FR1) | ✅ merged |
 | 4c | PR3 — Ledger core (double-entry posting, balance derivation) | ✅ merged |
 | 4d | PR4 — Online top-up (FR2) | ✅ merged |
-| 4e | PR4b — Balance enquiry / Cek Saldo (FR14) | ⬅ current |
-| 4f | PR5 — Pouch provisioning + certificate (FR3, FR13) | ⬜ pending |
-| 4g | PR6 — Sync ingest endpoint (FR5) | pending |
-| 5a | PR7 — Worker bootstrap + inbox poller | pending |
-| 5b | PR8 — Settlement (FR4, FR6–FR8, FR11, FR12) | pending |
-| 5c | PR9 — Reconciliation job (FR9) | pending |
-| 5d | PR10 — MQTT publisher | pending |
-| 5e | PR11 — Admin read endpoints (FR10) | pending |
-| 6 | Device simulator (parallel from PR6) | pending |
-| 7 | Caddy + domain setup (after PR6 stable) | pending |
-| 8 | Integration + safety testing | pending |
-| 9 | Hardening + demo | pending |
+| 4e | PR4b — Balance enquiry / Cek Saldo (FR14) | ✅ merged |
+| 4f | PR5 — Pouch provisioning + certificate (FR3, FR13) | ✅ merged |
+| 4g | PR6 — Sync ingest endpoint (FR5) | ✅ merged |
+| 5a | PR7 — Worker bootstrap + inbox poller | ✅ merged |
+| 5b | PR8 — Settlement (FR4, FR6–FR8, FR11, FR12) | ✅ merged |
+| 5c | PR9 — Reconciliation job (FR9) | ✅ merged |
+| 5d | PR10 — MQTT publisher | ✅ merged |
+| 5e | PR11 — Admin read endpoints (FR10) | ✅ merged |
+| 6 | Caddy + domain setup (api.dompetgaruda.com + mqtt.dompetgaruda.com) | ✅ done |
+| 7 | Mosquitto MQTT broker with TLS | ✅ done |
+| 8 | Backoffice backend (FR15, FR16, FR17) | ⬅ current |
+| 9 | Backoffice frontend (Next.js, shadcn/ui, backoffice.dompetgaruda.com) | pending |
+| 10 | Device simulator | pending |
+| 11 | Integration + safety testing | pending |
+| 12 | Backup setup + test restore | pending |
+| 13 | Demo | pending |
+
+---
+
+## 11. Backoffice Admin Panel (demo scope)
+
+**Goal:** A web UI at `backoffice.dompetgaruda.com` for Faisal to manage users, devices,
+sync batches, and flagged transactions during the demo.
+
+**Tech stack:** Next.js (App Router), Bun, shadcn/ui, Tailwind CSS, next-themes.
+Deployed as a Docker container served by Caddy at `backoffice.dompetgaruda.com`.
+
+**Color palette (light mode):**
+- Primary: `#5d7066` (sage green — buttons, active nav, focus states)
+- Surface: `#f1f1f1` (light gray — page background)
+- Accent: `#d9c6b0` (warm sand — badges, highlights, tags)
+- Dark mode derives from the same palette (darkened sage + warm neutrals)
+
+**Pages in scope for demo:**
+
+| Page | Purpose | Key actions |
+|------|---------|-------------|
+| Login | Authenticate admin | POST /admin/auth/login |
+| Dashboard | Overview: totals, health | GET /admin/users, /admin/flagged |
+| Users | Manage account holders | List, create, top-up per user |
+| Devices | Manage physical devices | List, register, suspend/unlock |
+| Sync Batches | View upload history | List (read-only), see status/errors |
+| Flagged Transactions | View and resolve anomalies | List, resolve per flag |
+
+**Out of scope for this panel (phase 3):**
+- Writer role and article management
+- Landing page content management
+- Multi-admin accounts
+- Role-based access control beyond admin/non-admin
+
+**Backend prerequisites (must be merged before FE starts):**
+- FR15: POST /admin/auth/login
+- FR16: PATCH /admin/flagged/{flagId}/resolve
+- FR17: PATCH /admin/devices/{deviceId}/status

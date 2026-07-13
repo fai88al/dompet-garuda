@@ -107,6 +107,23 @@ scheduled task as a workaround.
 - **Device auth:** device presents token as Bearer on device endpoints.
 - **Never** trust transport auth as the anti-double-spend mechanism.
 
+### Admin login endpoint (FR15 — for backoffice UI)
+
+The backoffice UI needs a login endpoint so the admin token is never hardcoded in browser code.
+
+```
+POST /admin/auth/login
+Body:    { "password": "..." }
+Success: 200 { "token": "...", "type": "Bearer" }
+Failure: 401 { "message": "Invalid password" }
+```
+
+- Compare password against `ADMIN_API_TOKEN` from config.
+- The response token **IS** the `ADMIN_API_TOKEN` value — do NOT create a separate token.
+- Add basic brute-force protection: after 5 failed attempts from the same IP within 5 minutes,
+  return 429. A simple in-memory attempt counter is sufficient for the prototype.
+- `@Profile("api")` required. Never log the password or token value (invariant 9).
+
 ---
 
 ## 5. Module layout
@@ -115,13 +132,17 @@ scheduled task as a workaround.
 src/main/java/com/dompetgaruda/api/
   common/          # entities, ledger posting, Ed25519 verification, DTOs
   config/          # ApiConfig, WorkerConfig (@Profile-gated), SecurityConfig, MqttConfig
-  auth/            # AdminTokenFilter (@Profile("api")), DeviceTokenService, DeviceTokenVerifier
-  device/          # device registration, certificate issuance
+  auth/            # AdminTokenFilter (@Profile("api")), DeviceTokenService, DeviceTokenVerifier,
+                   # AdminLoginController (POST /admin/auth/login — FR15)
+  device/          # device registration, certificate issuance,
+                   # PATCH /admin/devices/{deviceId}/status (FR17)
   wallet/          # balance enquiry (read), top-up, pouch provisioning
   ledger/          # LedgerPostingService — double-entry posting, balance derivation
   sync/            # api: ingest controller → sync_inbox / worker: inbox poller + settlement
   reconciliation/  # worker: pouch-vs-ledger reconciliation job
   mqtt/            # Paho client, topic publishers/subscribers
+  admin/           # PATCH /admin/flagged/{flagId}/resolve (FR16)
+                   # (read endpoints already in respective modules)
 src/main/resources/
   db/migration/    # V1__init.sql, V2__... — never edit applied migrations
   application.yml
@@ -138,11 +159,11 @@ src/main/resources/
 - **CI/CD:** GitHub Actions pipeline deploys on push to `main`. Three jobs: test → build-push → deploy.
   - test: `./mvnw clean verify`
   - build-push: builds Docker image, pushes to GHCR (`ghcr.io/fai88al/dompet-garuda`)
-  - deploy: SSHes to VPS, runs `git pull && docker compose -f docker-compose.prod.yml pull && up -d`
+  - deploy: SSHes to VPS, runs scp of config files then `docker compose -f docker-compose.prod.yml up -d`
 - **Compose files:**
   - `docker-compose.yml` — local dev only (Postgres on `127.0.0.1:5434`)
-  - `docker-compose.prod.yml` — VPS deployment (api + worker + postgres + caddy when added)
-  - Both files are in the repo. The VPS file is NEVER manually maintained — `git pull` keeps it current.
+  - `docker-compose.prod.yml` — VPS deployment (api + worker + postgres + caddy + mosquitto)
+  - Both files are in the repo. The VPS file is NEVER manually maintained — deploy copies it.
 - **Deploy SSH key:** a dedicated `github-actions-deploy` Ed25519 key is in `~/.ssh/authorized_keys`
   on the VPS, separate from the developer's personal key. The private key is stored as the
   `VPS_SSH_KEY` GitHub Actions secret.
@@ -173,6 +194,7 @@ src/main/resources/
 - `wallet/{deviceId}/cert-refresh` — worker → device, QoS 1.
 - **ACL:** each device may only pub/sub under `wallet/{itsOwnDeviceId}/#`.
 - **Transport:** TLS port 8883 only. Never plain 1883.
+- Full topic contract: see `docs/MQTT_CONTRACT.md`.
 
 ---
 
@@ -190,7 +212,9 @@ docker compose -f docker-compose.prod.yml logs api --tail=50 # api logs on VPS
 **Deployed stack** (VPS, `docker compose -f docker-compose.prod.yml`):
 - `dompet-postgres` — healthy
 - `dompet-api` — healthy (Flyway runs here, REST endpoints live here)
-- `dompet-worker` — running; restarts until PR7 adds the inbox poller (expected, not a bug)
+- `dompet-worker` — running, polling inbox every 5s, reconciling hourly
+- `dompet-caddy` — serving api.dompetgaruda.com (HTTPS) and mqtt.dompetgaruda.com (TLS cert)
+- `dompet-mosquitto` — MQTT broker, TLS port 8883
 
 ---
 
@@ -227,8 +251,12 @@ docker compose -f docker-compose.prod.yml logs api --tail=50 # api logs on VPS
 - Don't invent an auth scheme — use §4.
 - Don't add a dummy `@Scheduled` task to keep the worker alive — wait for PR7.
 - Don't reference `ADMIN_API_TOKEN` in any bean without `@Profile("api")`.
-- Don't expose port 8080 on the VPS host — `expose:` only, Caddy will proxy later.
-- Don't include you as contributor. Always use my github profile as contributot
+- Don't expose port 8080 on the VPS host — `expose:` only, Caddy proxies externally.
+- Don't include Claude as contributor — always use the human developer's GitHub profile.
+- Don't create a separate token store or JWT for the backoffice login — the existing
+  `ADMIN_API_TOKEN` is the token. The login endpoint validates the password and returns it.
+- Don't build writer role, article management, or landing page — those are phase 3,
+  explicitly out of scope (PRD §11).
 
 ---
 
