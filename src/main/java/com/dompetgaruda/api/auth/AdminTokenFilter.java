@@ -45,6 +45,12 @@ public class AdminTokenFilter extends OncePerRequestFilter {
             return;
         }
 
+        // Login endpoint validates the password itself — no Bearer token needed
+        if ("/admin/auth/login".equals(request.getRequestURI())) {
+            chain.doFilter(request, response);
+            return;
+        }
+
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith("Bearer ")) {
             String provided = header.substring(7);

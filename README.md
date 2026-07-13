@@ -100,6 +100,9 @@ Admin endpoints require `Authorization: Bearer <ADMIN_API_TOKEN>`. Device endpoi
 | `GET` | `/admin/certificates` | List all offline certificates DESC; optional `?status=` filter | Admin |
 | `GET` | `/admin/sync` | Last 50 sync_inbox rows (no raw_payload); optional `?limit=N` (max 200) | Admin |
 | `GET` | `/admin/flagged` | Unresolved flagged rows by default; optional `?resolved=true` | Admin |
+| `POST` | `/admin/auth/login` | Exchange admin password for Bearer token (FR15); brute-force protected | None |
+| `PATCH` | `/admin/flagged/{flagId}/resolve` | Mark a flagged transaction as resolved (FR16); 409 if already done | Admin |
+| `PATCH` | `/admin/devices/{deviceId}/status` | Set device status to ACTIVE/SUSPENDED/LOCKED (FR17) | Admin |
 | `POST` | `/device/pouch/load` | Load funds into offline pouch; issues signed certificate (FR3/FR13) | Device |
 | `GET` | `/device/balance` | Return online balance + pouch committed (FR14) | Device |
 | `POST` | `/device/sync` | Upload signed offline transaction batch; stored in sync_inbox (FR5) | Device |
@@ -183,6 +186,7 @@ docs/api-examples/       # curl scripts for every endpoint
 - [x] **PR9 — Reconciliation** — periodic pouch-vs-ledger check, flag mismatches via flagged_transactions
 - [x] **PR10 — MQTT** — Paho client (`MqttConfig`), `MqttPublisherService`: `publishSyncResult` (after settlement commit) + `publishCertRefresh` (after pouch load commit); graceful degradation when broker is unreachable; 2 integration tests (degradation + Mockito mock verify)
 - [x] **PR11 — FR10 — Admin read endpoints** — GET /admin/users, /admin/users/{id}, /admin/devices, /admin/certificates, /admin/sync, /admin/flagged
+- [x] **PR12 — FR15/FR16/FR17 — Backoffice backend endpoints** — POST /admin/auth/login (password→token, brute-force protected), PATCH /admin/flagged/{flagId}/resolve, PATCH /admin/devices/{deviceId}/status
 
 ---
 

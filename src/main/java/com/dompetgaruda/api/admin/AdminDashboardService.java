@@ -212,6 +212,33 @@ public class AdminDashboardService {
     }
 
     // -------------------------------------------------------------------------
+    // PATCH /admin/flagged/{flagId}/resolve (FR16)
+    // -------------------------------------------------------------------------
+
+    public FlagResolveResponse resolveFlag(long flagId) {
+        // Check existence and current state in one query
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT flag_id, resolved, resolved_at FROM flagged_transactions WHERE flag_id = ?",
+                flagId);
+
+        if (rows.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Flag not found: " + flagId);
+        }
+
+        boolean alreadyResolved = Boolean.TRUE.equals(rows.get(0).get("resolved"));
+        if (alreadyResolved) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Flag already resolved: " + flagId);
+        }
+
+        Instant now = Instant.now();
+        jdbc.update(
+                "UPDATE flagged_transactions SET resolved = true, resolved_at = ? WHERE flag_id = ?",
+                java.sql.Timestamp.from(now), flagId);
+
+        return new FlagResolveResponse(flagId, true, now);
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
