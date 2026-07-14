@@ -10,6 +10,7 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfigurationSource;
 
 @Configuration
 @EnableWebSecurity
@@ -17,14 +18,18 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final AdminTokenFilter adminTokenFilter;
+    private final CorsConfigurationSource corsConfigurationSource;
 
-    public SecurityConfig(AdminTokenFilter adminTokenFilter) {
+    public SecurityConfig(AdminTokenFilter adminTokenFilter,
+                          CorsConfigurationSource corsConfigurationSource) {
         this.adminTokenFilter = adminTokenFilter;
+        this.corsConfigurationSource = corsConfigurationSource;
     }
 
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         return http
+                .cors(cors -> cors.configurationSource(corsConfigurationSource))
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .addFilterBefore(adminTokenFilter, UsernamePasswordAuthenticationFilter.class)

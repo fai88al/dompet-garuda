@@ -29,6 +29,7 @@ services:
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN}
       SERVER_SIGNING_KEY: ${SERVER_SIGNING_KEY}
       POUCH_MAX_AMOUNT_IDR: ${POUCH_MAX_AMOUNT_IDR}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,https://backoffice.dompetgaruda.com}
     expose:
       - "8080"
     depends_on:
