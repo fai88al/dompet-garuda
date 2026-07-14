@@ -122,6 +122,7 @@ See `docs/api-examples/` for copy-pasteable `curl` examples of every endpoint.
 | `ADMIN_API_TOKEN` | Yes | — | Static Bearer token protecting all `/admin/**` endpoints |
 | `SERVER_SIGNING_KEY` | Yes (api) | — | Base64-encoded 32-byte Ed25519 seed for signing offline certificates |
 | `POUCH_MAX_AMOUNT_IDR` | Yes | — | Maximum Rupiah amount loadable per pouch provisioning call |
+| `CORS_ALLOWED_ORIGINS` | No | `http://localhost:3000` | Comma-separated browser origins allowed on `/admin/**` and `/device/**`; set to backoffice UI origin in production |
 
 > **Port note (macOS):** the Docker Postgres runs on **5434** to avoid colliding with a Homebrew Postgres on the default 5432.
 
@@ -187,6 +188,7 @@ docs/api-examples/       # curl scripts for every endpoint
 - [x] **PR10 — MQTT** — Paho client (`MqttConfig`), `MqttPublisherService`: `publishSyncResult` (after settlement commit) + `publishCertRefresh` (after pouch load commit); graceful degradation when broker is unreachable; 2 integration tests (degradation + Mockito mock verify)
 - [x] **PR11 — FR10 — Admin read endpoints** — GET /admin/users, /admin/users/{id}, /admin/devices, /admin/certificates, /admin/sync, /admin/flagged
 - [x] **PR12 — FR15/FR16/FR17 — Backoffice backend endpoints** — POST /admin/auth/login (password→token, brute-force protected), PATCH /admin/flagged/{flagId}/resolve, PATCH /admin/devices/{deviceId}/status
+- [x] **PR13 — CORS** — `CorsConfig` wired into Spring Security; origins configurable via `CORS_ALLOWED_ORIGINS`; `allowCredentials=false` (Bearer token auth, no cookies)
 
 ---
 
