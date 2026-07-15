@@ -93,6 +93,16 @@ services:
       caddy:
         condition: service_started
 
+  backoffice:
+    image: ghcr.io/fai88al/backoffice-dompet-garuda:latest
+    container_name: dompet-backoffice
+    restart: unless-stopped
+    expose:
+      - "3000"
+    depends_on:
+      api:
+        condition: service_healthy        
+
 volumes:
   pgdata:
   caddy_data:

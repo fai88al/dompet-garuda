@@ -5,3 +5,7 @@ api.dompetgaruda.com {
 mqtt.dompetgaruda.com {
 	respond "MQTT broker - connect on port 8883" 200
 }
+
+backoffice.dompetgaruda.com {
+	reverse_proxy backoffice:3000
+}
