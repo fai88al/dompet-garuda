@@ -15,7 +15,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * so the schema is already in place when the worker starts.
  *
  * <p>Only the datasource properties are required in this context: all beans that inject
- * {@code admin.api-token}, {@code server.signing-key}, or {@code pouch.max-amount-idr} are
+ * {@code admin.jwt-secret}, {@code server.signing-key}, or {@code pouch.max-amount-idr} are
  * annotated {@code @Profile("api")} and are never loaded by the worker context.
  *
  * <p>The container is started once in a static initializer and lives for the entire JVM session.

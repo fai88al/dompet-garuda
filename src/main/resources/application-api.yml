@@ -18,3 +18,9 @@ server:
 # Override via CORS_ALLOWED_ORIGINS env var in production.
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+
+# JWT signing secret for admin session tokens (HMAC-SHA256, 32-byte key hex-encoded).
+# Generate with: openssl rand -hex 32
+# Must be provided via ADMIN_JWT_SECRET env var. Never log this value (§7.9).
+admin:
+  jwt-secret: ${ADMIN_JWT_SECRET}

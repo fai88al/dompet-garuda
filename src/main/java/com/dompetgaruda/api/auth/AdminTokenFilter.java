@@ -1,39 +1,43 @@
 package com.dompetgaruda.api.auth;
 
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 /**
- * Enforces admin Bearer-token authentication on all /admin/** paths.
+ * Enforces admin Bearer-JWT authentication on all /admin/** paths (FR15).
  *
- * The token is compared by comparing SHA-256 hashes to avoid timing attacks
- * on the raw string. Prototype-grade per CLAUDE.md §4 / PRD NG1.
+ * <p>Passes /admin/auth/login through without a token — that endpoint authenticates itself.
+ * For all other /admin/** paths: extracts the Bearer token, verifies signature + expiry via
+ * {@link JwtService}, and on success sets the authenticated principal in the security context.
  *
- * The plaintext token is never logged. See CLAUDE.md §7 rule 9.
+ * <p>On any failure (missing, malformed, expired, invalid signature): returns 401.
+ * The JWT payload is never logged (§7.9).
  *
- * @Profile("api") — ADMIN_API_TOKEN is not set in the worker container; this
- * bean must never be instantiated there.
+ * <p>{@code @Profile("api")} — {@code ADMIN_JWT_SECRET} is not available in the worker container.
  */
 @Component
 @Profile("api")
 public class AdminTokenFilter extends OncePerRequestFilter {
 
-    private final byte[] expectedTokenHash;
+    private final JwtService jwtService;
 
-    public AdminTokenFilter(@Value("${admin.api-token}") String adminToken) {
-        this.expectedTokenHash = sha256(adminToken.getBytes(StandardCharsets.UTF_8));
+    public AdminTokenFilter(JwtService jwtService) {
+        this.jwtService = jwtService;
     }
 
     @Override
@@ -45,7 +49,7 @@ public class AdminTokenFilter extends OncePerRequestFilter {
             return;
         }
 
-        // Login endpoint validates the password itself — no Bearer token needed
+        // Login endpoint authenticates via username+password — no Bearer token required
         if ("/admin/auth/login".equals(request.getRequestURI())) {
             chain.doFilter(request, response);
             return;
@@ -53,24 +57,25 @@ public class AdminTokenFilter extends OncePerRequestFilter {
 
         String header = request.getHeader("Authorization");
         if (header != null && header.startsWith("Bearer ")) {
-            String provided = header.substring(7);
-            byte[] providedHash = sha256(provided.getBytes(StandardCharsets.UTF_8));
-            if (MessageDigest.isEqual(expectedTokenHash, providedHash)) {
+            String token = header.substring(7);
+            try {
+                Claims claims = jwtService.verify(token);
+                String role = claims.get("role", String.class);
+                var auth = new UsernamePasswordAuthenticationToken(
+                        claims.getSubject(),
+                        null,
+                        List.of(new SimpleGrantedAuthority("ROLE_" + role)));
+                auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                SecurityContextHolder.getContext().setAuthentication(auth);
                 chain.doFilter(request, response);
                 return;
+            } catch (JwtException ignored) {
+                // Falls through to 401 below
             }
         }
 
         response.setStatus(HttpStatus.UNAUTHORIZED.value());
         response.setContentType("application/json");
         response.getWriter().write("{\"error\":\"Unauthorized\"}");
-    }
-
-    private static byte[] sha256(byte[] input) {
-        try {
-            return MessageDigest.getInstance("SHA-256").digest(input);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 unavailable", e);
-        }
     }
 }

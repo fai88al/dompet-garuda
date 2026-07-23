@@ -7,8 +7,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.*;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -23,13 +21,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ol>
  */
 class FlagResolveTest extends ApiIntegrationTestBase {
-
-    private static final String ADMIN_TOKEN = "test-admin-resolve-flag-fr16";
-
-    @DynamicPropertySource
-    static void props(DynamicPropertyRegistry registry) {
-        registry.add("admin.api-token", () -> ADMIN_TOKEN);
-    }
 
     @Autowired TestRestTemplate rest;
     @Autowired JdbcTemplate jdbc;
@@ -100,7 +91,7 @@ class FlagResolveTest extends ApiIntegrationTestBase {
     private HttpHeaders adminHeaders() {
         HttpHeaders h = new HttpHeaders();
         h.setContentType(MediaType.APPLICATION_JSON);
-        h.setBearerAuth(ADMIN_TOKEN);
+        h.setBearerAuth(testAdminJwt());
         return h;
     }
 }

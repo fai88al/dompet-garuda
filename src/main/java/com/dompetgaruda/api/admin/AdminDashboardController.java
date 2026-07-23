@@ -16,10 +16,10 @@ import org.springframework.http.ResponseEntity;
 /**
  * Read-only admin dashboard endpoints (FR10).
  *
- * All endpoints require Bearer ADMIN_API_TOKEN (enforced by AdminTokenFilter).
+ * All endpoints require a valid admin JWT (enforced by AdminTokenFilter).
  * No money movement and no writes to any table occur here.
  *
- * @Profile("api") — ADMIN_API_TOKEN is not set in the worker container.
+ * @Profile("api") — ADMIN_JWT_SECRET is not set in the worker container.
  */
 @RestController
 @RequestMapping("/admin")
