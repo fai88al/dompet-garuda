@@ -14,8 +14,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.*;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 
 import java.nio.charset.StandardCharsets;
 import java.security.*;
@@ -45,9 +43,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class PouchLoadTest extends ApiIntegrationTestBase {
 
-    private static final String ADMIN_TOKEN = "test-admin-token-pouch";
     // Must match pouch.max-amount-idr inherited from ApiIntegrationTestBase (3_000_000L)
-    private static final long   MAX_AMOUNT  = 3_000_000L;
+    private static final long MAX_AMOUNT = 3_000_000L;
 
     /**
      * KeyPair derived deterministically from {@link ApiIntegrationTestBase#SIGNING_KEY_SEED}.
@@ -82,13 +79,6 @@ class PouchLoadTest extends ApiIntegrationTestBase {
         } catch (NoSuchAlgorithmException | InvalidAlgorithmParameterException e) {
             throw new ExceptionInInitializerError(e);
         }
-    }
-
-    @DynamicPropertySource
-    static void props(DynamicPropertyRegistry registry) {
-        registry.add("admin.api-token", () -> ADMIN_TOKEN);
-        // server.signing-key is set by ApiIntegrationTestBase.SIGNING_KEY_SEED.
-        // TEST_KEY_PAIR is derived from that same seed, so verification works.
     }
 
     @Autowired TestRestTemplate rest;
@@ -357,7 +347,7 @@ class PouchLoadTest extends ApiIntegrationTestBase {
     private HttpHeaders adminHeaders() {
         HttpHeaders h = new HttpHeaders();
         h.setContentType(MediaType.APPLICATION_JSON);
-        h.setBearerAuth(ADMIN_TOKEN);
+        h.setBearerAuth(testAdminJwt());
         return h;
     }
 

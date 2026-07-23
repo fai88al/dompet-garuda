@@ -6,8 +6,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.*;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 
 import java.util.UUID;
 
@@ -26,18 +24,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class DeviceStatusTest extends ApiIntegrationTestBase {
 
-    private static final String ADMIN_TOKEN = "test-admin-device-status-fr17";
-
-    @DynamicPropertySource
-    static void props(DynamicPropertyRegistry registry) {
-        registry.add("admin.api-token", () -> ADMIN_TOKEN);
-    }
-
     @Autowired TestRestTemplate rest;
 
     @Test
     void updateStatus_toSuspended_returns200() {
-        UUID userId = createUser("+62831000001");
+        UUID userId = createUser("+62832000001");
         UUID deviceId = registerDevice(userId, "pk-status-001").deviceId();
 
         ResponseEntity<UpdateDeviceStatusResponse> resp = patchStatus(deviceId, "SUSPENDED",
@@ -52,7 +43,7 @@ class DeviceStatusTest extends ApiIntegrationTestBase {
 
     @Test
     void suspendedDevice_failsDeviceAuth_returns401() {
-        UUID userId = createUser("+62831000002");
+        UUID userId = createUser("+62832000002");
         RegisterDeviceResponse reg = registerDevice(userId, "pk-status-002");
 
         // Suspend the device
@@ -69,7 +60,7 @@ class DeviceStatusTest extends ApiIntegrationTestBase {
 
     @Test
     void updateStatus_invalidValue_returns400() {
-        UUID userId = createUser("+62831000003");
+        UUID userId = createUser("+62832000003");
         UUID deviceId = registerDevice(userId, "pk-status-003").deviceId();
 
         ResponseEntity<String> resp = patchStatus(deviceId, "INVALID_STATUS", String.class);
@@ -117,7 +108,7 @@ class DeviceStatusTest extends ApiIntegrationTestBase {
     private HttpHeaders adminHeaders() {
         HttpHeaders h = new HttpHeaders();
         h.setContentType(MediaType.APPLICATION_JSON);
-        h.setBearerAuth(ADMIN_TOKEN);
+        h.setBearerAuth(testAdminJwt());
         return h;
     }
 

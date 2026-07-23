@@ -9,8 +9,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.*;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 
 import java.util.UUID;
 
@@ -32,13 +30,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ol>
  */
 class TopUpTest extends ApiIntegrationTestBase {
-
-    private static final String ADMIN_TOKEN = "test-admin-token-topup";
-
-    @DynamicPropertySource
-    static void props(DynamicPropertyRegistry registry) {
-        registry.add("admin.api-token", () -> ADMIN_TOKEN);
-    }
 
     @Autowired
     TestRestTemplate rest;
@@ -85,7 +76,7 @@ class TopUpTest extends ApiIntegrationTestBase {
     void topUp_unknownUser_returns404() {
         ResponseEntity<String> resp = rest.postForEntity(
                 "/admin/users/" + UUID.randomUUID() + "/topup",
-                new HttpEntity<>(new TopUpRequest(10_000L, "ref"), adminHeaders(ADMIN_TOKEN)),
+                new HttpEntity<>(new TopUpRequest(10_000L, "ref"), adminHeaders(testAdminJwt())),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
@@ -101,7 +92,7 @@ class TopUpTest extends ApiIntegrationTestBase {
 
         ResponseEntity<String> resp = rest.postForEntity(
                 "/admin/users/" + userId + "/topup",
-                new HttpEntity<>(new TopUpRequest(0L, "zero"), adminHeaders(ADMIN_TOKEN)),
+                new HttpEntity<>(new TopUpRequest(0L, "zero"), adminHeaders(testAdminJwt())),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -113,7 +104,7 @@ class TopUpTest extends ApiIntegrationTestBase {
 
         ResponseEntity<String> resp = rest.postForEntity(
                 "/admin/users/" + userId + "/topup",
-                new HttpEntity<>(new TopUpRequest(-1_000L, "neg"), adminHeaders(ADMIN_TOKEN)),
+                new HttpEntity<>(new TopUpRequest(-1_000L, "neg"), adminHeaders(testAdminJwt())),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -160,7 +151,7 @@ class TopUpTest extends ApiIntegrationTestBase {
     private <T> T adminPost(String path, Object body, Class<T> responseType) {
         ResponseEntity<T> resp = rest.postForEntity(
                 path,
-                new HttpEntity<>(body, adminHeaders(ADMIN_TOKEN)),
+                new HttpEntity<>(body, adminHeaders(testAdminJwt())),
                 responseType);
         assertThat(resp.getStatusCode().is2xxSuccessful())
                 .as("Expected 2xx from %s but got %s: %s", path, resp.getStatusCode(), resp.getBody())

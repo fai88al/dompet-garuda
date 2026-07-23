@@ -1,34 +1,35 @@
 package com.dompetgaruda.api;
 
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
+
+import javax.crypto.SecretKey;
+import java.util.Date;
+import java.util.HexFormat;
+import java.util.UUID;
 
 /**
  * Shared base class for all api-profile integration tests.
  *
  * <p>Provides a single Testcontainers Postgres instance and a {@code @DynamicPropertySource}
- * that wires the datasource and the two properties required to construct {@link
- * com.dompetgaruda.api.wallet.PouchService} ({@code server.signing-key} and
- * {@code pouch.max-amount-idr}).
+ * that wires the datasource, {@code server.signing-key}, {@code pouch.max-amount-idr}, and
+ * {@code admin.jwt-secret} with fixed test values so all subclasses share one Spring context.
  *
- * <p>Subclasses must supply their own {@code @DynamicPropertySource} for
- * {@code admin.api-token} — different values across test classes prevent Spring
- * from reusing the same application context and mixing test data.
+ * <p>{@link #SIGNING_KEY_SEED} is the Ed25519 seed configured for {@code server.signing-key}.
+ * {@link com.dompetgaruda.api.wallet.PouchLoadTest} derives its verification keypair from this
+ * constant. No subclass should override {@code server.signing-key}.
  *
- * <p>{@link #SIGNING_KEY_SEED} is the Ed25519 seed this base class configures for
- * {@code server.signing-key}. {@link com.dompetgaruda.api.wallet.PouchLoadTest} derives
- * its verification keypair from this constant so that the public key it uses to verify
- * signatures matches exactly the private key PouchService uses to produce them.
- * No subclass should override {@code server.signing-key}.
+ * <p>{@link #testAdminJwt()} issues a valid admin JWT signed with {@link #TEST_JWT_SECRET}
+ * for use as a Bearer token in test requests. Subclasses call this instead of hitting the
+ * login endpoint so tests remain independent of login-endpoint behaviour.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("api")
-@Testcontainers
 public abstract class ApiIntegrationTestBase {
 
     /**
@@ -38,13 +39,27 @@ public abstract class ApiIntegrationTestBase {
      */
     public static final String SIGNING_KEY_SEED = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
-    @Container
+    /** 64-hex-char (32-byte) HMAC-SHA256 key used to sign test admin JWTs. */
+    public static final String TEST_JWT_SECRET =
+            "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20";
+
+    private static final UUID TEST_ADMIN_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+
+    // Singleton container — started once per JVM, shared by all subclasses.
+    // @Container is intentionally absent: that annotation stops the container after each
+    // test class, which breaks the shared Spring context. We start it here explicitly and
+    // let the JVM exit handle cleanup (Testcontainers ryuk reaps it).
+    protected static final PostgreSQLContainer<?> postgres = startPostgres();
+
     @SuppressWarnings("resource")
-    protected static final PostgreSQLContainer<?> postgres =
-            new PostgreSQLContainer<>("postgres:16")
-                    .withDatabaseName("dompet")
-                    .withUsername("dompet")
-                    .withPassword("test");
+    private static PostgreSQLContainer<?> startPostgres() {
+        PostgreSQLContainer<?> c = new PostgreSQLContainer<>("postgres:16")
+                .withDatabaseName("dompet")
+                .withUsername("dompet")
+                .withPassword("test");
+        c.start();
+        return c;
+    }
 
     @DynamicPropertySource
     static void baseProps(DynamicPropertyRegistry registry) {
@@ -52,7 +67,24 @@ public abstract class ApiIntegrationTestBase {
         registry.add("SPRING_DATASOURCE_USERNAME",  postgres::getUsername);
         registry.add("SPRING_DATASOURCE_PASSWORD",  postgres::getPassword);
         registry.add("server.signing-key",          () -> SIGNING_KEY_SEED);
-        // Production max per POUCH_MAX_AMOUNT_IDR.
         registry.add("pouch.max-amount-idr",        () -> 3_000_000L);
+        registry.add("admin.jwt-secret",            () -> TEST_JWT_SECRET);
+    }
+
+    /**
+     * Issues a valid admin JWT signed with {@link #TEST_JWT_SECRET}, valid for 24 h.
+     * Use as {@code headers.setBearerAuth(testAdminJwt())} in test requests.
+     */
+    public static String testAdminJwt() {
+        SecretKey key = Keys.hmacShaKeyFor(HexFormat.of().parseHex(TEST_JWT_SECRET));
+        long now = System.currentTimeMillis();
+        return Jwts.builder()
+                .subject(TEST_ADMIN_ID.toString())
+                .claim("username", "test-admin@dompetgaruda.com")
+                .claim("role", "ADMIN")
+                .issuedAt(new Date(now))
+                .expiration(new Date(now + 24L * 60 * 60 * 1000))
+                .signWith(key)
+                .compact();
     }
 }

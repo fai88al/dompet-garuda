@@ -4,8 +4,6 @@ import com.dompetgaruda.api.ApiIntegrationTestBase;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 
 import java.util.List;
 import java.util.UUID;
@@ -27,11 +25,6 @@ import static org.assertj.core.api.Assertions.*;
  * </ol>
  */
 class LedgerPostingServiceTest extends ApiIntegrationTestBase {
-
-    @DynamicPropertySource
-    static void props(DynamicPropertyRegistry registry) {
-        registry.add("admin.api-token", () -> "test-admin-token");
-    }
 
     @Autowired
     LedgerPostingService ledger;

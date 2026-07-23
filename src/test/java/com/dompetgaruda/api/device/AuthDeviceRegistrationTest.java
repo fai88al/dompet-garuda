@@ -10,8 +10,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.*;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 
 import java.util.UUID;
 
@@ -23,13 +21,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * See CLAUDE.md §10.
  */
 class AuthDeviceRegistrationTest extends ApiIntegrationTestBase {
-
-    private static final String ADMIN_TOKEN = "test-admin-secret-for-registration";
-
-    @DynamicPropertySource
-    static void props(DynamicPropertyRegistry registry) {
-        registry.add("admin.api-token", () -> ADMIN_TOKEN);
-    }
 
     @Autowired
     TestRestTemplate rest;
@@ -84,7 +75,7 @@ class AuthDeviceRegistrationTest extends ApiIntegrationTestBase {
 
         ResponseEntity<String> resp = rest.postForEntity(
                 "/admin/users",
-                new HttpEntity<>(new CreateUserRequest("Dani 2", "+62811000004"), adminHeaders(ADMIN_TOKEN)),
+                new HttpEntity<>(new CreateUserRequest("Dani 2", "+62811000004"), adminHeaders(testAdminJwt())),
                 String.class);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     }
@@ -150,7 +141,7 @@ class AuthDeviceRegistrationTest extends ApiIntegrationTestBase {
 
         ResponseEntity<String> resp = rest.postForEntity(
                 "/admin/devices",
-                new HttpEntity<>(new RegisterDeviceRequest(userId, pubKey, "Device C2"), adminHeaders(ADMIN_TOKEN)),
+                new HttpEntity<>(new RegisterDeviceRequest(userId, pubKey, "Device C2"), adminHeaders(testAdminJwt())),
                 String.class);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     }
@@ -171,7 +162,7 @@ class AuthDeviceRegistrationTest extends ApiIntegrationTestBase {
 
         ResponseEntity<String> resp = rest.postForEntity(
                 "/admin/devices",
-                new HttpEntity<>(new RegisterDeviceRequest(userId, "pk_user4_4", "Device 4"), adminHeaders(ADMIN_TOKEN)),
+                new HttpEntity<>(new RegisterDeviceRequest(userId, "pk_user4_4", "Device 4"), adminHeaders(testAdminJwt())),
                 String.class);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
     }
@@ -189,7 +180,7 @@ class AuthDeviceRegistrationTest extends ApiIntegrationTestBase {
     private <T> T adminPost(String path, Object body, Class<T> responseType) {
         ResponseEntity<T> resp = rest.postForEntity(
                 path,
-                new HttpEntity<>(body, adminHeaders(ADMIN_TOKEN)),
+                new HttpEntity<>(body, adminHeaders(testAdminJwt())),
                 responseType);
         assertThat(resp.getStatusCode().is2xxSuccessful())
                 .as("Expected 2xx from %s but got %s: %s", path, resp.getStatusCode(), resp.getBody())

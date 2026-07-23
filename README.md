@@ -87,7 +87,7 @@ Tests use Testcontainers — Docker Desktop must be running. A real Postgres 16 
 
 Swagger UI (requires API server running): `http://localhost:8080/swagger-ui.html`
 
-Admin endpoints require `Authorization: Bearer <ADMIN_API_TOKEN>`. Device endpoints require a device Bearer token.
+Admin endpoints require `Authorization: Bearer <JWT>` (obtained from `POST /admin/auth/login`). Device endpoints require a device Bearer token.
 
 | Method | Path | Description | Auth |
 |--------|------|-------------|------|
@@ -100,7 +100,7 @@ Admin endpoints require `Authorization: Bearer <ADMIN_API_TOKEN>`. Device endpoi
 | `GET` | `/admin/certificates` | List all offline certificates DESC; optional `?status=` filter | Admin |
 | `GET` | `/admin/sync` | Last 50 sync_inbox rows (no raw_payload); optional `?limit=N` (max 200) | Admin |
 | `GET` | `/admin/flagged` | Unresolved flagged rows by default; optional `?resolved=true` | Admin |
-| `POST` | `/admin/auth/login` | Exchange admin password for Bearer token (FR15); brute-force protected | None |
+| `POST` | `/admin/auth/login` | Exchange email + password for signed JWT (FR15); brute-force protected; same 401 for unknown user vs wrong password | None |
 | `PATCH` | `/admin/flagged/{flagId}/resolve` | Mark a flagged transaction as resolved (FR16); 409 if already done | Admin |
 | `PATCH` | `/admin/devices/{deviceId}/status` | Set device status to ACTIVE/SUSPENDED/LOCKED (FR17) | Admin |
 | `POST` | `/device/pouch/load` | Load funds into offline pouch; issues signed certificate (FR3/FR13) | Device |
@@ -119,7 +119,7 @@ See `docs/api-examples/` for copy-pasteable `curl` examples of every endpoint.
 | `SPRING_DATASOURCE_USERNAME` | Yes | — | Database user, e.g. `dompet` |
 | `SPRING_DATASOURCE_PASSWORD` | Yes | — | Database password |
 | `POSTGRES_PASSWORD` | Yes (Docker) | — | Password for the Docker Postgres container; must match `SPRING_DATASOURCE_PASSWORD` |
-| `ADMIN_API_TOKEN` | Yes | — | Static Bearer token protecting all `/admin/**` endpoints |
+| `ADMIN_JWT_SECRET` | Yes (api) | — | 32-byte hex key for signing admin JWTs (generate: `openssl rand -hex 32`); protects all `/admin/**` endpoints |
 | `SERVER_SIGNING_KEY` | Yes (api) | — | Base64-encoded 32-byte Ed25519 seed for signing offline certificates |
 | `POUCH_MAX_AMOUNT_IDR` | Yes | — | Maximum Rupiah amount loadable per pouch provisioning call |
 | `CORS_ALLOWED_ORIGINS` | No | `http://localhost:3000` | Comma-separated browser origins allowed on `/admin/**` and `/device/**`; set to backoffice UI origin in production |
@@ -132,7 +132,7 @@ See `docs/api-examples/` for copy-pasteable `curl` examples of every endpoint.
 
 ```
 src/main/java/com/dompetgaruda/api/
-  auth/           # AdminTokenFilter, DeviceTokenService, DeviceTokenVerifier
+  auth/           # AdminTokenFilter (JWT verify), AdminLoginController, AdminUser entity/repo, JwtService, DeviceTokenService, DeviceTokenVerifier
   common/         # JPA entities (User, Device, Account), repositories
   config/         # SecurityConfig (stateless Bearer-token auth)
   admin/          # AdminDashboardController, AdminDashboardService, DTOs (FR10 read endpoints)
@@ -189,6 +189,7 @@ docs/api-examples/       # curl scripts for every endpoint
 - [x] **PR11 — FR10 — Admin read endpoints** — GET /admin/users, /admin/users/{id}, /admin/devices, /admin/certificates, /admin/sync, /admin/flagged
 - [x] **PR12 — FR15/FR16/FR17 — Backoffice backend endpoints** — POST /admin/auth/login (password→token, brute-force protected), PATCH /admin/flagged/{flagId}/resolve, PATCH /admin/devices/{deviceId}/status
 - [x] **PR13 — CORS** — `CorsConfig` wired into Spring Security; origins configurable via `CORS_ALLOWED_ORIGINS`; `allowCredentials=false` (Bearer token auth, no cookies)
+- [x] **PR14 — FR15 — Real per-user admin accounts** — `admin_users` table (Flyway V3), BCrypt-hashed passwords, JWT issuance (jjwt 0.12.x, HMAC-SHA256, 24 h); `POST /admin/auth/login` returns `{token, type, username, role}`; `AdminTokenFilter` rewritten to verify JWT; `ADMIN_API_TOKEN` fully retired; brute-force protection unchanged; 8 new auth tests
 
 ---
 
