@@ -5,65 +5,163 @@ a time, instead of generating the whole MVP in one blob. Hand out tasks **one at
 and merging each before the next. Claude Code reads `CLAUDE.md` automatically; point it at the PRD
 for *scope*, not as a build list.
 
-**Progress:** PR1 (scaffold) ✅ merged · PR2 (auth + device registration) ✅ merged · **next: PR3 (ledger core)**
+**Progress:** PR1–PR11 ✅ all merged and verified in production.
+Infrastructure complete: VPS hardened, Docker Compose stack (postgres, api, worker, caddy,
+mosquitto), CI/CD via GitHub Actions, TLS on `api.dompetgaruda.com` and `mqtt.dompetgaruda.com`,
+backoffice frontend deployed at `backoffice.dompetgaruda.com`.
 
-**Before each task:** package root is `com.dompetgaruda.api` (already set in CLAUDE.md and the repo),
-your dev datasource points at `localhost:5432` (VPS over SSH tunnel, or a local Postgres), and your
-GitHub account has push access to the client repo.
+**Next: PR12 — replace static `ADMIN_API_TOKEN` with real per-user accounts (`feat/admin-user-auth`)**
 
----
-
-## Build order (one PR each — don't batch)
-
-Rationale for the order: the **ledger is the foundation**, so it comes before anything that moves
-money; the API service (Phase 4) is finished before the worker (Phase 5).
-
-**API service (Phase 4)**
-
-1. ✅ **PR1 — Scaffold.** Maven/Spring Boot skeleton, `api`/`worker` profiles, Flyway wired, V1 in `db/migration`, smoke test. *(merged)*
-2. ✅ **PR2 — Auth + device registration (FR1).** Admin token auth; admin-initiated device registration storing the Ed25519 public key; device-token issue + hash; max 3 devices/user; minimal create-user (+ opens ONLINE account row). *(merged)*
-3. **PR3 — Ledger core (the heart).** Double-entry posting service + balance derivation, plain SQL/JdbcTemplate, in one DB transaction. Tests assert credits = debits and correct balances. *Nothing that moves money is built before this. Review this PR the most carefully of all.*
-4. **PR4 — Online top-up (FR2).** Admin tops up a user; posts `TOPUP` via the ledger service.
-5. **PR4b — Balance enquiry / "Cek Saldo" (FR14).** *New.* A read-only device-authenticated endpoint returning the user's authoritative **online balance** (ledger-derived) + the **pouch committed** amount (active certificate), clearly labelled. No ledger writes. Depends on PR3's balance derivation; placed after PR4 so there's a real balance to show. Test: returned figure equals ledger sum, and the call performs zero writes.
-6. **PR5 — Pouch provisioning + certificate (FR3, FR13).** Debit online, issue signed cert (24h expiry), enforce one active cert per device.
-7. **PR6 — Sync ingest endpoint (FR5).** Device-auth, write raw batch to `sync_inbox`, return 202. No validation/settlement here. *This completes the API service.*
-
-**Worker service (Phase 5)**
-
-8. **PR7 — Worker bootstrap + inbox poller.** `FOR UPDATE SKIP LOCKED` poll loop, ShedLock on the schedule, status transitions on `sync_inbox`.
-9. **PR8 — Settlement (FR4, FR6, FR7, FR8, FR11, FR12 + §9a).** Verify Ed25519 signatures + counters, enforce pouch limit, post `OFFLINE_TRANSFER` (credit receiver online), refund unspent (`POUCH_REFUND`), flag late/over-limit/malformed. The required test cases in CLAUDE.md §10 live here.
-10. **PR9 — Reconciliation job (FR9).** Scheduled, ShedLock-wrapped, writes mismatches to flagged.
-11. **PR10 — MQTT publisher.** Paho client; publish `sync-result` per CLAUDE.md §6. (Receive-side/status optional.)
-12. **PR11 — Admin read endpoints (FR10).** Read-only lists; UI deferred.
-
-**Parallel, anytime after PR6: device simulator.** A small standalone program that generates real
-Ed25519-signed batches and calls the sync API — this is what lets you test PR7–PR9 without ESP32
-hardware (PRD R1). Worth doing early.
+This is required before the writer role (articles, landing page) can exist — a single shared
+token can't distinguish who is logged in, which the writer feature needs from day one.
 
 ---
 
-## Next prompt to paste — PR3 (ledger core)
+## Completed build order (for reference)
+
+**API service (Phase 4)** — all merged
+1. ✅ PR1 — Scaffold (profiles, Flyway, Testcontainers smoke test)
+2. ✅ PR2 — Auth + device registration (FR1)
+3. ✅ PR3 — Ledger core (double-entry posting, balance derivation)
+4. ✅ PR4 — Online top-up (FR2)
+5. ✅ PR4b — Balance enquiry / Cek Saldo (FR14)
+6. ✅ PR5 — Pouch provisioning + certificate (FR3, FR13)
+7. ✅ PR6 — Sync ingest endpoint (FR5)
+
+**Worker service (Phase 5)** — all merged
+8. ✅ PR7 — Worker bootstrap + inbox poller
+9. ✅ PR8 — Settlement (FR4, FR6-FR8, FR11, FR12)
+10. ✅ PR9 — Reconciliation job (FR9)
+11. ✅ PR10 — MQTT publisher
+12. ✅ PR11 — Admin read endpoints (FR10)
+
+**Infrastructure** — all done
+- ✅ VPS hardened, Docker Compose, CI/CD
+- ✅ Caddy + TLS for api.dompetgaruda.com
+- ✅ Mosquitto + TLS for mqtt.dompetgaruda.com (shared cert via Caddy)
+- ✅ Backoffice frontend deployed at backoffice.dompetgaruda.com
+
+---
+
+## Current phase — real auth + writer role foundation
+
+12. **PR12 — Real per-user admin/writer accounts (`feat/admin-user-auth`).** Replaces
+    `ADMIN_API_TOKEN` with `admin_users` table (BCrypt password, role), JWT-based login and
+    session validation. Two accounts seeded: `rizki@dompetgaruda.com`, `faisal@dompetgaruda.com`
+    (both role `ADMIN`, temporary passwords — rotate after first login, see CLAUDE.md §14).
+    *This PR is the prerequisite for the writer role and article management — do not skip.*
+13. **PR13 (future, not yet scoped) — Password change endpoint.** `PATCH /admin/auth/password`
+    so seeded temporary passwords can be rotated without a new migration.
+14. **PR14 (future, not yet scoped) — Writer role + article endpoints.** `articles` table,
+    CRUD gated by `role == WRITER || ADMIN`, image upload for cover images. Confirm full scope
+    with Faisal before starting — this is a meaningfully larger PR than prior ones.
+
+**Parallel, ongoing:** device simulator (for testing settlement without ESP32 hardware),
+backup setup (restic → R2/B2 + one test restore) — both still outstanding from the original
+demo-readiness checklist, independent of the auth/writer work above.
+
+---
+
+## Next prompt to paste — PR12 (real per-user auth)
 
 ```
-Read CLAUDE.md again first (especially §3 ledger posting reference, §7 invariants, §10 testing),
-and PRD §6. Work on branch `feat/ledger-core`, open a PR against main, don't push to main.
+Read CLAUDE.md fully — especially the updated §4 (admin/writer authentication),
+§7 invariants, and §14 follow-ups. This replaces the static ADMIN_API_TOKEN auth
+model with real per-user accounts. Work on branch feat/admin-user-auth, open a
+PR against main.
 
-Scope of this task ONLY — the double-entry ledger engine; no user-facing endpoints:
-1. A ledger posting service (plain SQL / JdbcTemplate, NOT JPA for the writes) that, in ONE DB
-   transaction, inserts a ledger_transactions row plus its balanced ledger_entries
-   (sum of CREDIT amounts == sum of DEBIT amounts). Reject any unbalanced posting.
-2. A balance-derivation query: an account's balance = SUM(CREDIT) - SUM(DEBIT) over its entries.
-3. Helpers to resolve the SYSTEM account and a user's ONLINE / a device's POUCH account.
-4. Money is `long` / BIGINT, whole Rupiah. No floats anywhere.
-5. Tests (Testcontainers, real Postgres):
-   - a balanced posting succeeds and both sides land;
-   - an unbalanced posting is rejected and writes nothing (transaction rolls back);
-   - balance derivation returns correct values after several postings;
-   - a TOPUP-shaped posting (DEBIT system, CREDIT user.online) produces the right online balance.
+1. Flyway migration V(next)__admin_users.sql:
+   CREATE TABLE admin_users (
+     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     username VARCHAR(120) UNIQUE NOT NULL,
+     password_hash VARCHAR(255) NOT NULL,
+     role VARCHAR(20) NOT NULL CHECK (role IN ('ADMIN','WRITER')),
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   );
+   Seed two rows in the same migration with BCrypt hashes (cost factor 10):
+   - username 'rizki@dompetgaruda.com', role ADMIN
+   - username 'faisal@dompetgaruda.com', role ADMIN
+   Generate real BCrypt hashes for temporary passwords and note the plaintext
+   temporary passwords ONLY in the PR description — never commit them anywhere
+   in code, docs, or commit messages.
 
-Do NOT build top-up, pouch, or any endpoint yet — this is the engine the later PRs call.
-Open the PR describing the posting API and the invariants the tests enforce.
+2. Add BCryptPasswordEncoder bean (@Profile("api")) if not already present.
+
+3. Add a JWT library (io.jsonwebtoken: jjwt-api, jjwt-impl, jjwt-jackson) to
+   pom.xml. Add ADMIN_JWT_SECRET to .env.example (generate with
+   openssl rand -hex 32) and application-api.yml.
+
+4. Rewrite POST /admin/auth/login:
+   Body: { "username": "...", "password": "..." }
+   - Look up admin_users by username (treat as case-sensitive email string).
+   - Verify password against password_hash with BCrypt.
+   - On success: issue JWT { sub: userId, username, role }, signed with
+     ADMIN_JWT_SECRET, 24h expiry. Return { "token": "...", "type": "Bearer",
+     "username": "...", "role": "..." }.
+   - On failure: 401 { "message": "Invalid username or password" }.
+   - Keep existing brute-force protection (5 attempts/5min/IP → 429).
+
+5. Rewrite AdminTokenFilter (@Profile("api")):
+   - Parse and verify JWT signature + expiry instead of comparing a static string.
+   - On valid token: set authenticated principal (userId + role) in the
+     security context so controllers can access it later if needed.
+   - On invalid/expired/missing: 401.
+
+6. Remove ADMIN_API_TOKEN entirely — from .env.example, application-api.yml,
+   docker-compose.prod.yml, and any remaining code references. Search the
+   whole repo for the string to confirm nothing is missed.
+
+7. Tests (extend ApiIntegrationTestBase):
+   - Login with correct username/password → 200 + valid JWT.
+   - Login with wrong password → 401.
+   - Login with unknown username → 401.
+   - 5 failed attempts → 6th returns 429.
+   - Existing admin endpoints (e.g. GET /admin/users) reject requests with no
+     token, expired token, or malformed token → 401. Accept valid JWT → 200.
+
+8. §13 deliverables:
+   a. Swagger: update login endpoint docs to reflect username+password body.
+   b. docs/api-examples/13-admin-login.sh: update to use username+password
+      with the seeded email-style usernames as example values.
+   c. README.md: grep -n "^## " first. Update the auth section and
+      milestones. Update in-place.
+
+Open PR with the two seeded usernames and their temporary passwords in the
+PR description (not committed elsewhere), and confirm ADMIN_API_TOKEN is
+fully removed from the codebase (grep for it and show zero matches).
 ```
+
+---
+
+## After PR12 merges — verification checklist before moving to the backoffice
+
+```bash
+# Confirm ADMIN_API_TOKEN is gone
+docker compose -f docker-compose.prod.yml exec api \
+  printenv | grep ADMIN_API_TOKEN
+# Must return nothing
+
+# Login with seeded account
+curl -sf -X POST https://api.dompetgaruda.com/admin/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"rizki@dompetgaruda.com","password":"<temp password from PR description>"}' \
+  | python3 -m json.tool
+# Must return 200 with a JWT, username, and role
+
+# Confirm old-style token no longer works
+curl -s -o /dev/null -w "%{http_code}" \
+  -X GET https://api.dompetgaruda.com/admin/users \
+  -H "Authorization: Bearer <old ADMIN_API_TOKEN value>"
+# Must return 401
+
+# Confirm new JWT works on an existing endpoint
+curl -sf https://api.dompetgaruda.com/admin/users \
+  -H "Authorization: Bearer <new JWT from login>" | python3 -m json.tool
+# Must return 200 with the users list
+```
+
+Only after all four checks pass, move to the backoffice repo's PR8 (login form update to
+collect username + password instead of password-only).
 
 ---
 
@@ -73,3 +171,5 @@ Open the PR describing the posting API and the invariants the tests enforce.
 - Money tests (Testcontainers, real Postgres) are part of the PR, not a follow-up.
 - Never push to main; never commit as the AI — commits are authored by your GitHub account.
 - If a request seems to conflict with a money-safety invariant (CLAUDE.md §7), stop and flag it.
+- Never commit plaintext passwords, JWT secrets, or API tokens anywhere in the repo —
+  only in PR descriptions when explicitly required for a one-time handoff (e.g. seeded accounts).

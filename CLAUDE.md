@@ -32,6 +32,8 @@ and **Scan QR** (QRIS-style). Everything else is the machinery that makes those 
 - **Scheduled-job locking:** ShedLock (Postgres-backed) on every `@Scheduled` method.
 - **Tests:** JUnit 5 + Testcontainers (real Postgres) for anything touching money.
 - **API docs:** Springdoc OpenAPI (`springdoc-openapi-starter-webmvc-ui`). Swagger UI at `/swagger-ui.html`, api profile only.
+- **Password hashing:** Spring Security `BCryptPasswordEncoder`, cost factor 10.
+- **JWT:** `io.jsonwebtoken` (jjwt) for admin/writer session tokens.
 
 > **Package root:** `com.dompetgaruda.api`. Everything follows this value.
 
@@ -67,10 +69,10 @@ Verify it is disabled: `docker compose logs api | grep -i "security password"` m
 
 ### Profile isolation rule (learned in production — do not repeat this bug)
 
-Any Spring bean that references admin config (`ADMIN_API_TOKEN`, admin security filters,
+Any Spring bean that references admin config (`ADMIN_JWT_SECRET`, admin security filters,
 admin-specific services) **must be annotated `@Profile("api")`** so it never loads in the
-worker profile. The worker must start cleanly with no reference to `ADMIN_API_TOKEN` in its logs.
-If a class injects `@Value("${admin.api-token}")` without a `@Profile("api")` annotation,
+worker profile. The worker must start cleanly with no reference to admin auth config in its logs.
+If a class injects `@Value("${admin.jwt-secret}")` without a `@Profile("api")` annotation,
 the worker will fail at startup with `PlaceholderResolutionException`. This is a hard rule.
 
 ### Expected worker behavior before PR7
@@ -102,27 +104,41 @@ scheduled task as a workaround.
 
 ## 4. Authentication (prototype-grade — NG1)
 
-- **Admin auth:** static `ADMIN_API_TOKEN` from env, Bearer token, `@Profile("api")` only.
+- **Admin/writer auth:** real user accounts in `admin_users` table (username + BCrypt password
+  hash + role). No shared static token. `@Profile("api")` only.
 - **Device registration:** admin-initiated. Server returns device token once, stores only hash.
 - **Device auth:** device presents token as Bearer on device endpoints.
 - **Never** trust transport auth as the anti-double-spend mechanism.
 
-### Admin login endpoint (FR15 — for backoffice UI)
-
-The backoffice UI needs a login endpoint so the admin token is never hardcoded in browser code.
+### Admin/writer login (FR15 — real per-user accounts)
 
 ```
 POST /admin/auth/login
-Body:    { "password": "..." }
-Success: 200 { "token": "...", "type": "Bearer" }
-Failure: 401 { "message": "Invalid password" }
+Body:    { "username": "...", "password": "..." }
+Success: 200 { "token": "<JWT>", "type": "Bearer", "username": "...", "role": "ADMIN"|"WRITER" }
+Failure: 401 { "message": "Invalid username or password" }
 ```
 
-- Compare password against `ADMIN_API_TOKEN` from config.
-- The response token **IS** the `ADMIN_API_TOKEN` value — do NOT create a separate token.
-- Add basic brute-force protection: after 5 failed attempts from the same IP within 5 minutes,
-  return 429. A simple in-memory attempt counter is sufficient for the prototype.
-- `@Profile("api")` required. Never log the password or token value (invariant 9).
+- **Username field holds an email address** (e.g. `rizki@dompetgaruda.com`). Column name stays
+  `username` for schema simplicity, but treat the value as an email in validation and UI copy.
+- Passwords are BCrypt-hashed in `admin_users.password_hash`. Never store or log plaintext.
+- The JWT is signed with `ADMIN_JWT_SECRET` (env var, 32-byte hex), 24h expiry,
+  contains `{ sub: userId, username, role }`.
+- Basic brute-force protection: 5 failed attempts / 5 min / IP → 429.
+- New accounts are created only by direct DB insert (seeded via Flyway) or a future
+  admin-only "create user" endpoint. **No public signup.**
+- `ADMIN_API_TOKEN` is retired — do not reintroduce it.
+- `AdminTokenFilter` validates JWT signature + expiry, not a static string comparison.
+
+### Seeded accounts (initial, temporary passwords — rotate after first login)
+
+Two `ADMIN` role accounts are seeded via Flyway migration (see PR — feat/admin-user-auth):
+- `rizki@dompetgaruda.com`
+- `faisal@dompetgaruda.com`
+
+Temporary passwords are documented **only in the PR description** of the migration that
+seeds them — never in this file, never in git-tracked docs. Rotate both passwords immediately
+after confirming login works (see §14 below for a password-change approach once built).
 
 ---
 
@@ -132,8 +148,9 @@ Failure: 401 { "message": "Invalid password" }
 src/main/java/com/dompetgaruda/api/
   common/          # entities, ledger posting, Ed25519 verification, DTOs
   config/          # ApiConfig, WorkerConfig (@Profile-gated), SecurityConfig, MqttConfig
-  auth/            # AdminTokenFilter (@Profile("api")), DeviceTokenService, DeviceTokenVerifier,
-                   # AdminLoginController (POST /admin/auth/login — FR15)
+  auth/            # AdminTokenFilter (@Profile("api"), JWT-based), DeviceTokenService,
+                   # DeviceTokenVerifier, AdminLoginController (POST /admin/auth/login — FR15),
+                   # AdminUser entity/repository, JwtService (issue/verify)
   device/          # device registration, certificate issuance,
                    # PATCH /admin/devices/{deviceId}/status (FR17)
   wallet/          # balance enquiry (read), top-up, pouch provisioning
@@ -162,7 +179,7 @@ src/main/resources/
   - deploy: SSHes to VPS, runs scp of config files then `docker compose -f docker-compose.prod.yml up -d`
 - **Compose files:**
   - `docker-compose.yml` — local dev only (Postgres on `127.0.0.1:5434`)
-  - `docker-compose.prod.yml` — VPS deployment (api + worker + postgres + caddy + mosquitto)
+  - `docker-compose.prod.yml` — VPS deployment (api + worker + postgres + caddy + mosquitto + backoffice)
   - Both files are in the repo. The VPS file is NEVER manually maintained — deploy copies it.
 - **Deploy SSH key:** a dedicated `github-actions-deploy` Ed25519 key is in `~/.ssh/authorized_keys`
   on the VPS, separate from the developer's personal key. The private key is stored as the
@@ -181,7 +198,7 @@ src/main/resources/
 6. **Pouch outflows ≤ certificate.** Violation → flag, never post.
 7. **All `@Scheduled` jobs have ShedLock.**
 8. **MQTT carries no financial authority.** Treat all MQTT input as untrusted hints.
-9. **Never log secrets:** no PINs, private keys, signatures, tokens.
+9. **Never log secrets:** no PINs, private keys, signatures, tokens, passwords.
 10. **Schema only via Flyway.** Never edit an applied migration — add a new one.
 11. **Failed/suspicious work is flagged, never silently dropped.**
 
@@ -213,8 +230,10 @@ docker compose -f docker-compose.prod.yml logs api --tail=50 # api logs on VPS
 - `dompet-postgres` — healthy
 - `dompet-api` — healthy (Flyway runs here, REST endpoints live here)
 - `dompet-worker` — running, polling inbox every 5s, reconciling hourly
-- `dompet-caddy` — serving api.dompetgaruda.com (HTTPS) and mqtt.dompetgaruda.com (TLS cert)
+- `dompet-caddy` — serving api.dompetgaruda.com (HTTPS), mqtt.dompetgaruda.com (TLS cert),
+  backoffice.dompetgaruda.com (HTTPS)
 - `dompet-mosquitto` — MQTT broker, TLS port 8883
+- `dompet-backoffice` — Next.js admin panel, internal port 3000
 
 ---
 
@@ -225,6 +244,8 @@ docker compose -f docker-compose.prod.yml logs api --tail=50 # api logs on VPS
   to `ledger_entries` and `ledger_transactions` before and after the call.
 - Required test cases for sync settlement: happy path, replayed batch, over-pouch-limit,
   malformed batch, out-of-order counter.
+- Auth tests: correct credentials succeed, wrong password/unknown user fail with 401,
+  brute-force limit returns 429, protected endpoints reject invalid/expired/missing JWT.
 - Use Testcontainers (real Postgres) — do not mock the database for money logic.
 - A failing or skipped money test blocks merge.
 
@@ -250,13 +271,13 @@ docker compose -f docker-compose.prod.yml logs api --tail=50 # api logs on VPS
 - Don't store or transmit money decisions over MQTT.
 - Don't invent an auth scheme — use §4.
 - Don't add a dummy `@Scheduled` task to keep the worker alive — wait for PR7.
-- Don't reference `ADMIN_API_TOKEN` in any bean without `@Profile("api")`.
+- Don't reference admin JWT/auth config in any bean without `@Profile("api")`.
 - Don't expose port 8080 on the VPS host — `expose:` only, Caddy proxies externally.
 - Don't include Claude as contributor — always use the human developer's GitHub profile.
-- Don't create a separate token store or JWT for the backoffice login — the existing
-  `ADMIN_API_TOKEN` is the token. The login endpoint validates the password and returns it.
-- Don't build writer role, article management, or landing page — those are phase 3,
-  explicitly out of scope (PRD §11).
+- Don't reintroduce `ADMIN_API_TOKEN` — real per-user accounts (§4) replaced it.
+- Don't build a public signup endpoint — accounts are seeded/admin-created only.
+- Don't build article management, or landing-page content APIs yet unless a specific
+  PR asks for them — confirm scope against the PRD first.
 
 ---
 
@@ -291,3 +312,16 @@ Prerequisites stated. Scripts must be copy-pasteable with real placeholder value
 Every endpoint controller: `@Tag`, `@Operation`, `@ApiResponse` per status code.
 Every request/response DTO: `@Schema` per field. Springdoc generates `/swagger-ui.html`.
 Swagger enabled on `api` profile only (`springdoc.api-docs.enabled: false` in worker yml).
+
+---
+
+## 14. Follow-up (not yet built — raise before starting)
+
+- **Password change endpoint.** Once real accounts exist, add
+  `PATCH /admin/auth/password` (authenticated, current password + new password) so the
+  seeded temporary passwords can be rotated without a DB migration. Not yet scoped as a PR —
+  confirm before building.
+- **Writer role permissions.** The `role` claim (`ADMIN` / `WRITER`) is issued in the JWT now,
+  but no endpoint yet checks it. Article management endpoints (future) should gate on
+  `role == WRITER || role == ADMIN`; admin-only endpoints (users, devices, top-up) should
+  gate on `role == ADMIN`. Not yet implemented — confirm scope before building.
