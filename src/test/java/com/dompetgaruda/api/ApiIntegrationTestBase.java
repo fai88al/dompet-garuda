@@ -43,7 +43,7 @@ public abstract class ApiIntegrationTestBase {
     public static final String TEST_JWT_SECRET =
             "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20";
 
-    private static final UUID TEST_ADMIN_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+    protected static final UUID TEST_ADMIN_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     // Singleton container — started once per JVM, shared by all subclasses.
     // @Container is intentionally absent: that annotation stops the container after each
