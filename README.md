@@ -103,9 +103,18 @@ Admin endpoints require `Authorization: Bearer <JWT>` (obtained from `POST /admi
 | `POST` | `/admin/auth/login` | Exchange email + password for signed JWT (FR15); brute-force protected; same 401 for unknown user vs wrong password | None |
 | `PATCH` | `/admin/flagged/{flagId}/resolve` | Mark a flagged transaction as resolved (FR16); 409 if already done | Admin |
 | `PATCH` | `/admin/devices/{deviceId}/status` | Set device status to ACTIVE/SUSPENDED/LOCKED (FR17) | Admin |
+| `POST` | `/admin/articles` | Create an article (status=DRAFT); slug auto-generated from title | Admin/Writer |
+| `GET` | `/admin/articles` | List all articles, newest first; optional `?status=` filter | Admin/Writer |
+| `GET` | `/admin/articles/{id}` | Get one article for editing/preview | Admin/Writer |
+| `PATCH` | `/admin/articles/{id}` | Update title, contentHtml, coverImageUrl | Admin/Writer |
+| `POST` | `/admin/articles/{id}/publish` | DRAFT → PUBLISHED, sets published_at; 409 if already published | Admin/Writer |
+| `POST` | `/admin/articles/{id}/unpublish` | PUBLISHED → DRAFT, clears published_at | Admin/Writer |
+| `DELETE` | `/admin/articles/{id}` | Hard delete an article | Admin/Writer |
 | `POST` | `/device/pouch/load` | Load funds into offline pouch; issues signed certificate (FR3/FR13) | Device |
 | `GET` | `/device/balance` | Return online balance + pouch committed (FR14) | Device |
 | `POST` | `/device/sync` | Upload signed offline transaction batch; stored in sync_inbox (FR5) | Device |
+| `GET` | `/public/articles` | List PUBLISHED articles, newest first | None |
+| `GET` | `/public/articles/{slug}` | Get one PUBLISHED article by slug; 404 if not found/not published | None |
 
 See `docs/api-examples/` for copy-pasteable `curl` examples of every endpoint.
 
@@ -132,11 +141,12 @@ See `docs/api-examples/` for copy-pasteable `curl` examples of every endpoint.
 
 ```
 src/main/java/com/dompetgaruda/api/
-  auth/           # AdminTokenFilter (JWT verify), AdminLoginController, AdminUser entity/repo, JwtService, DeviceTokenService, DeviceTokenVerifier
+  auth/           # AdminTokenFilter (JWT verify), AdminLoginController, AdminUser entity/repo, JwtService, DeviceTokenService, DeviceTokenVerifier, RoleGuard
   common/         # JPA entities (User, Device, Account), repositories
   config/         # SecurityConfig (stateless Bearer-token auth)
   admin/          # AdminDashboardController, AdminDashboardService, DTOs (FR10 read endpoints)
   device/         # AdminController, AdminService, DTOs
+  articles/       # ArticleController (admin), PublicArticleController, ArticleService, Article entity/repo, SlugGenerator, DTOs
   ledger/         # LedgerPostingService — double-entry posting (plain SQL), balance derivation, account helpers
   sync/           # api: SyncIngestController → sync_inbox; worker: inbox poller + settlement (PR7/PR8)
   wallet/         # WalletController (top-up), PouchController (pouch load), DeviceBalanceController (balance)
@@ -168,6 +178,7 @@ docs/api-examples/       # curl scripts for every endpoint
 | `offline_transactions` | Settled BLE transfers with replay-protection unique constraint |
 | `flagged_transactions` | Anomalies from settlement/reconciliation |
 | `shedlock` | Distributed job lock for worker `@Scheduled` jobs |
+| `articles` | Backoffice articles (DRAFT/PUBLISHED) with `author_id` FK to `admin_users` |
 
 ---
 
@@ -190,6 +201,7 @@ docs/api-examples/       # curl scripts for every endpoint
 - [x] **PR12 — FR15/FR16/FR17 — Backoffice backend endpoints** — POST /admin/auth/login (password→token, brute-force protected), PATCH /admin/flagged/{flagId}/resolve, PATCH /admin/devices/{deviceId}/status
 - [x] **PR13 — CORS** — `CorsConfig` wired into Spring Security; origins configurable via `CORS_ALLOWED_ORIGINS`; `allowCredentials=false` (Bearer token auth, no cookies)
 - [x] **PR14 — FR15 — Real per-user admin accounts** — `admin_users` table (Flyway V3), BCrypt-hashed passwords, JWT issuance (jjwt 0.12.x, HMAC-SHA256, 24 h); `POST /admin/auth/login` returns `{token, type, username, role}`; `AdminTokenFilter` rewritten to verify JWT; `ADMIN_API_TOKEN` fully retired; brute-force protection unchanged; 8 new auth tests
+- [x] **PR15 — Articles CRUD (ADMIN/WRITER)** — `articles` table (Flyway V4) with `author_id` FK to `admin_users`; auto slug generation with `-2`/`-3` collision suffixing; `POST`/`GET`/`PATCH`/`publish`/`unpublish`/`DELETE` under `/admin/articles/**` gated to ADMIN or WRITER via the JWT role claim (`RoleGuard`); public `GET /public/articles` and `GET /public/articles/{slug}` (PUBLISHED only, no auth); new `rizkiwriter@dompetgaruda.com` WRITER account seeded
 
 ---
 
