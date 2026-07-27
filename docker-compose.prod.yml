@@ -101,7 +101,14 @@ services:
       - "3000"
     depends_on:
       api:
-        condition: service_healthy        
+        condition: service_healthy
+
+  landing:
+    image: ghcr.io/fai88al/dompet-garuda-ui:latest
+    container_name: dompet-landing
+    restart: unless-stopped
+    expose:
+      - "3000"
 
 volumes:
   pgdata:
