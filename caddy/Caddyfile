@@ -9,3 +9,11 @@ mqtt.dompetgaruda.com {
 backoffice.dompetgaruda.com {
 	reverse_proxy backoffice:3000
 }
+
+www.dompetgaruda.com {
+	redir https://dompetgaruda.com{uri} permanent
+}
+
+dompetgaruda.com {
+	reverse_proxy landing:3000
+}
