@@ -68,6 +68,7 @@ public abstract class ApiIntegrationTestBase {
         registry.add("SPRING_DATASOURCE_PASSWORD",  postgres::getPassword);
         registry.add("server.signing-key",          () -> SIGNING_KEY_SEED);
         registry.add("pouch.max-amount-idr",        () -> 3_000_000L);
+        registry.add("transfer.online.max-amount-idr", () -> 10_000_000L);
         registry.add("admin.jwt-secret",            () -> TEST_JWT_SECRET);
     }
 
