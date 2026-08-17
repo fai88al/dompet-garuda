@@ -85,4 +85,31 @@ public class MqttPublisherService {
             log.warn("Failed to publish cert-refresh hint for device {}: {}", deviceId, e.getMessage());
         }
     }
+
+    /**
+     * Publishes a payment-received notification to {@code wallet/{deviceId}/payment-received}
+     * (CLAUDE.md §8). Notification only — never trust this as proof of settlement; the ledger
+     * is authoritative. Called by the API immediately after an ONLINE_TRANSFER or
+     * QR_PAYMENT_ONLINE commits, unlike the other publish methods here which are worker-only.
+     */
+    public void publishPaymentReceived(String deviceId, long transactionId) {
+        try {
+            if (!client.isConnected()) {
+                log.warn("MQTT not connected — skipping payment-received publish for device {} txn {}",
+                        deviceId, transactionId);
+                return;
+            }
+            String topic = "wallet/" + deviceId + "/payment-received";
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("transactionId", transactionId);
+            MqttMessage msg = new MqttMessage(objectMapper.writeValueAsBytes(payload));
+            msg.setQos(QOS_1);
+            msg.setRetained(false);
+            client.publish(topic, msg);
+            log.debug("Published payment-received for device {} txn {}", deviceId, transactionId);
+        } catch (Exception e) {
+            log.warn("Failed to publish payment-received for device {} txn {}: {}",
+                    deviceId, transactionId, e.getMessage());
+        }
+    }
 }
