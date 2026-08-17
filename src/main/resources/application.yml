@@ -30,3 +30,9 @@ pouch:
 transfer:
   online:
     max-amount-idr: ${TRANSFER_ONLINE_MAX_AMOUNT_IDR}
+
+# TTL for Bayar QR Online payment requests before they expire (FR20/FR22).
+# Has a default (10 min) per this feature's spec — unlike transfer.online.max-amount-idr,
+# an expiry window is not a money-safety limit, so a safe default is acceptable here.
+qr-payment:
+  request-ttl-minutes: ${QR_PAYMENT_REQUEST_TTL_MINUTES:10}
