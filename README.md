@@ -111,6 +111,7 @@ Admin endpoints require `Authorization: Bearer <JWT>` (obtained from `POST /admi
 | `POST` | `/admin/articles/{id}/unpublish` | PUBLISHED → DRAFT, clears published_at | Admin/Writer |
 | `DELETE` | `/admin/articles/{id}` | Hard delete an article | Admin/Writer |
 | `POST` | `/device/pouch/load` | Load funds into offline pouch; issues signed certificate (FR3/FR13) | Device |
+| `POST` | `/device/transfer` | Online transfer to another user's balance; device-generated Idempotency-Key required (FR18/FR19) | Device |
 | `GET` | `/device/balance` | Return online balance + pouch committed (FR14) | Device |
 | `POST` | `/device/sync` | Upload signed offline transaction batch; stored in sync_inbox (FR5) | Device |
 | `GET` | `/public/articles` | List PUBLISHED articles, newest first | None |
@@ -131,6 +132,7 @@ See `docs/api-examples/` for copy-pasteable `curl` examples of every endpoint.
 | `ADMIN_JWT_SECRET` | Yes (api) | — | 32-byte hex key for signing admin JWTs (generate: `openssl rand -hex 32`); protects all `/admin/**` endpoints |
 | `SERVER_SIGNING_KEY` | Yes (api) | — | Base64-encoded 32-byte Ed25519 seed for signing offline certificates |
 | `POUCH_MAX_AMOUNT_IDR` | Yes | — | Maximum Rupiah amount loadable per pouch provisioning call |
+| `TRANSFER_ONLINE_MAX_AMOUNT_IDR` | Yes | — | Maximum Rupiah amount per online transfer (locked at 10,000,000 per R10) |
 | `CORS_ALLOWED_ORIGINS` | No | `http://localhost:3000` | Comma-separated browser origins allowed on `/admin/**` and `/device/**`; set to backoffice UI origin in production |
 
 > **Port note (macOS):** the Docker Postgres runs on **5434** to avoid colliding with a Homebrew Postgres on the default 5432.
@@ -202,6 +204,7 @@ docs/api-examples/       # curl scripts for every endpoint
 - [x] **PR13 — CORS** — `CorsConfig` wired into Spring Security; origins configurable via `CORS_ALLOWED_ORIGINS`; `allowCredentials=false` (Bearer token auth, no cookies)
 - [x] **PR14 — FR15 — Real per-user admin accounts** — `admin_users` table (Flyway V3), BCrypt-hashed passwords, JWT issuance (jjwt 0.12.x, HMAC-SHA256, 24 h); `POST /admin/auth/login` returns `{token, type, username, role}`; `AdminTokenFilter` rewritten to verify JWT; `ADMIN_API_TOKEN` fully retired; brute-force protection unchanged; 8 new auth tests
 - [x] **PR15 — Articles CRUD (ADMIN/WRITER)** — `articles` table (Flyway V4) with `author_id` FK to `admin_users`; auto slug generation with `-2`/`-3` collision suffixing; `POST`/`GET`/`PATCH`/`publish`/`unpublish`/`DELETE` under `/admin/articles/**` gated to ADMIN or WRITER via the JWT role claim (`RoleGuard`); public `GET /public/articles` and `GET /public/articles/{slug}` (PUBLISHED only, no auth); new `rizkiwriter@dompetgaruda.com` WRITER account seeded
+- [x] **PR16 — FR18/FR19 — Transfer Online Antar Pengguna** — `POST /device/transfer`: synchronous ONLINE_TRANSFER posting (DEBIT sender.online → CREDIT receiver.online), self-transfer rejected, configurable `transfer.online.max-amount-idr` (locked at Rp 10,000,000); device-generated `Idempotency-Key` enforced by a `UNIQUE` constraint on a new shared `idempotency_keys` table (also used by the upcoming Bayar QR Online PR) — duplicate keys replay the original response with zero re-posting; best-effort `wallet/{deviceId}/payment-received` MQTT hint
 
 ---
 
