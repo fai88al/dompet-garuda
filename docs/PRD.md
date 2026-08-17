@@ -1,273 +1,277 @@
-# Product Requirements Document — Dompet Digital (Prototype)
+# Product Requirements Document — Dompet Digital (Dompet Garuda)
 
 | | |
 |---|---|
 | **Project** | Dompet Digital — offline-capable IoT payment device |
 | **Initiator** | Faisal (via Fastwork) |
-| **Stage** | Prototype / proof-of-concept |
+| **Stage** | Prototype / proof-of-concept — Phase 2 (online transactions) approved |
 | **Doc owner** | Backend team |
-| **Status** | Approved for build |
+| **Status** | Phase 1 delivered. Phase 2 scope locked via approved RAB/Proposal, Aug 2026. |
 
 ---
 
 ## 1. Problem & premise
 
-Digital payments in Indonesia assume connectivity. Dompet Digital is a hardware wallet that lets
-two people transfer value device-to-device over Bluetooth with no internet, settling with the
-server later when connectivity returns.
+Digital payments in Indonesia assume connectivity. Dompet Digital is a hardware wallet that
+lets two people transfer value device-to-device over Bluetooth with no internet, settling
+with the server later when connectivity returns.
 
-This document defines what the **prototype** must do. Anything not listed in §4 is out of scope.
+**Phase 2 (this update)** extends the product to also support transactions when connectivity
+*is* available — direct online transfer, and QR-assisted payments both online and offline —
+without abandoning the offline-first capability that is the product's core differentiator.
 
 ---
 
 ## 2. Goals
 
-- **G1.** Demonstrate a complete offline value transfer between two devices over BLE, correctly settled after reconnect.
+**Phase 1 (delivered):**
+- **G1.** Complete offline value transfer between two devices over BLE, correctly settled after reconnect.
 - **G2.** Prevent offline double-spending (offline-pouch model).
 - **G3.** Prove the backend architecture (API + worker, transactional inbox, double-entry ledger) end to end.
-- **G4.** Be demonstrable on a single Hostinger KVM2 server.
+- **G4.** Demonstrable on a single Hostinger KVM2 server.
+
+**Phase 2 (this update):**
+- **G5.** Enable direct online transfer between users without requiring BLE or a pouch.
+- **G6.** Enable QR-assisted payments — both online (server-mediated) and offline (BLE-mediated) — so users can pay by scanning instead of manual entry.
+- **G7.** Preserve every money-safety invariant from Phase 1 across the new synchronous online flows — no relaxed guarantees just because a flow is "simpler."
 
 ## 2a. Non-goals
 
 - **NG1.** Not production-grade security or compliance.
 - **NG2.** Not real money or a real payment network. Balances are prototype tokens in IDR.
 - **NG3.** No multi-hop offline re-spend.
-- **NG4.** No consumer app; admin backoffice only (see §11).
+- **NG4.** No consumer mobile app; admin/writer backoffice + landing page only.
 - **NG5.** No horizontal scaling or multi-region.
 - **NG6.** No KYC or dispute resolution.
 - **NG7.** Balance enquiry returns current figures only — no history or statements.
-- **NG8.** No writer role, article management, or landing page — these are phase 3.
+- **NG8.** No further writer/article features beyond what's delivered (article CRUD, public read).
+- **NG9 (Phase 2). "Bayar QR" is NOT QRIS.** No integration with Bank Indonesia's QRIS
+  standard, no bank or PJP (Penyedia Jasa Pembayaran) integration, no interoperability with
+  external e-wallets. QR codes are generated and scanned entirely within the Dompet Garuda
+  ecosystem; settlement happens in this system's own ledger only. This naming and scope
+  boundary is deliberate — see CLAUDE.md §1 and §12.
+- **NG10 (Phase 2).** No hardware/firmware work in this document's costed scope, except the
+  QR payload specification handed to the firmware team (§4.5c). Camera integration, QR
+  rendering on-device, and scanning UX are firmware responsibilities, separately scoped.
 
 ---
 
 ## 3. Users
 
-- **Device holder.** Owns a Dompet device, checks balance, tops up, transacts offline.
-- **Admin.** Registers devices, tops up balances, manages users and flags via backoffice panel.
+- **Device holder.** Owns a Dompet device; checks balance; tops up; transacts offline; now
+  also transacts online and via Bayar QR.
+- **Admin.** Registers devices, tops up balances, manages users and flags via backoffice.
+- **Writer.** Manages articles via backoffice (unrelated to Phase 2, delivered previously).
 
 ---
 
 ## 4. In-scope features
 
-> **The device's three core user actions:** **Cek Saldo** (§4.2a), **Transfer** (§4.4), **Scan QR** (§4.5). Everything else is the machinery that makes those trustworthy.
+### Phase 1 (delivered — see Milestones §10 for status)
+- §4.1 Device registration & identity
+- §4.2 Online top-up (admin-initiated)
+- §4.2a Balance enquiry — "Cek Saldo"
+- §4.3 Offline pouch provisioning
+- §4.4 Offline transfer over BLE
+- §4.5 Offline QRIS-style request — **superseded by Phase 2's more precise "Bayar QR
+  Offline" (§4.5c below); the cosmetic-only version described in the original Phase 1 PRD
+  is retired in favor of the real implementation.**
+- §4.6 Sync & settlement
+- §4.7 Reconciliation job
+- §4.8 Admin read endpoints
+- Real per-user admin/writer authentication (JWT)
+- Article CRUD + public read endpoints
 
-### 4.1 Device registration & identity
-- Ed25519 keypair generated on device; private key never leaves the device.
-- Admin-initiated registration. Server returns device token once; stores only hash.
-- Backend can mark device active/suspended/locked.
+### Phase 2 — NEW (this update)
 
-### 4.2 Online top-up
-- Admin credits a user's online wallet (no real payment rail — NG2).
-- Recorded as a balanced double-entry ledger transaction (`TOPUP`).
+#### 4.5a Transfer Online Antar Pengguna
+- User sends money directly to another user's online balance via the server. No BLE, no
+  pouch, no certificate involved.
+- Requires the sending device to be online (obviously — this is the point of the feature).
+- Idempotency-protected: retrying an ambiguous request never double-posts.
+- Self-transfer is rejected.
+- Subject to a configurable maximum amount per transaction (default **Rp 10,000,000**,
+  see CLAUDE.md §14.5 — chosen because there is no pouch-style loss-containment for
+  online transfers, so a sane ceiling limits blast radius of any single error or abuse case,
+  while remaining well above typical transaction sizes).
 
-### 4.2a Balance enquiry — "Cek Saldo" (standalone read feature)
-- User checks balance without performing any transaction. First menu item on the device.
-- **Online:** API returns authoritative online balance (ledger-derived) + pouch committed
-  (active certificate `issued_amount`). Clearly labelled separately.
-- **Offline:** device shows local pouch balance (firmware-side, no server call).
-- **Freshness caveat:** server's pouch figure reflects loaded amount, not offline spends since
-  last sync. Device's local figure is the accurate spendable number when offline.
-- **Scope:** current figures only (NG7). No transaction history.
-- **No schema change.** Reads existing ledger and certificate tables. Zero ledger writes.
+#### 4.5b Bayar QR Online
+- Receiver generates a payment request (amount) on their device; the device renders it as
+  a QR code.
+- Payer scans the QR with their device's camera, sees the amount, confirms with PIN.
+- Settlement is a direct server-mediated ledger posting — same integrity model as §4.5a,
+  initiated via the two-step request/pay flow.
+- Payment requests expire after a configurable TTL (default **10 minutes**) and can only be
+  paid once (nonce-protected against reuse).
 
-### 4.3 Offline pouch provisioning
-- Device loads up to `pouch_limit` (max **Rp 3,000,000** — set by Faisal for the prototype;
-  must be reviewed before any real-money deployment) into offline pouch.
-- Backend debits online balance immediately; issues signed certificate (24h expiry).
-- Device can now spend up to the issued amount offline.
-
-### 4.4 Offline transfer over BLE
-- Mutual auth: exchange certificates + challenge-response over BLE.
-- Both users confirm with local PIN.
-- **Pre-transaction check:** sender's device checks local pouch balance and cert validity.
-  If insufficient or expired: refuse locally. This is a UX guard, not the security control.
-- Sender signs `{txn_id, sender, receiver, amount, counter, timestamp}`; receiver countersigns.
-- Both devices update local pouch balance and append to local append-only log.
-- Monotonic counter prevents replay.
-
-### 4.5 Offline QRIS-style request
-- Receiver displays QR with payment request (device id, amount, nonce). Payer scans.
-- Same balance + cert check as §4.4 before payer commits.
-- Actual value transfer via same BLE signing flow as §4.4.
-- **Prototype scope:** QRIS-format compatibility is cosmetic; not real QRIS settlement.
-
-### 4.6 Sync & settlement
-- Device reconnects, uploads signed batch via HTTPS.
-- API validates auth, stores raw batch in `sync_inbox`, returns `202`. No ledger writes.
-- Worker validates signatures + counters, checks pouch limits, posts balanced entries,
-  flags inconsistencies, publishes result via MQTT.
-
-### 4.7 Reconciliation job
-- Scheduled worker job: per certificate, verify `issued − signed_outflows == reported_pouch_balance`.
-- Mismatches go to `flagged_transactions` with reason. Nothing silently dropped.
-
-### 4.8 Admin read endpoints
-- Read-only endpoints: devices, balances, certs, syncs, flagged transactions.
-- Consumed by the backoffice panel (§11).
+#### 4.5c Bayar QR Offline
+- Functionally, this is the **existing offline BLE Transfer flow (§4.4)** with a QR-based
+  shortcut for entering payment details. The receiver's device shows a QR; the payer scans
+  it with their camera; the two devices then complete the transfer over Bluetooth exactly as
+  in §4.4 — same mutual authentication, same Ed25519 signing, same settlement.
+- The backend's role is minimal: a QR payload specification for the firmware team, and an
+  `origin` field on `offline_transactions` for observability (BLE vs QR-initiated). No new
+  settlement logic, no new verification path.
+- **This supersedes the placeholder "offline QRIS-style request" described in the original
+  Phase 1 PRD §4.5** — that description was written before the real design was finalized
+  and should not be treated as authoritative.
 
 ---
 
 ## 5. Out of scope
 
-No real money, no real QRIS/bank rail, no compliance, no scaling, no consumer app, no multi-hop
-offline re-spend, no transaction history, no writer role, no articles, no landing page.
-Build §4 and §11 only.
+Real QRIS/bank/PJP integration, consumer mobile app, hardware procurement, monthly
+infrastructure costs, third-party security audits, large-scale load testing — see NG1–NG10.
 
 ---
 
 ## 6. Functional requirements
 
-> **FR numbering follows this PRD, not the README.** If the README shows different numbers,
-> the README is wrong and should be corrected to match this document.
+> FR numbering continues from Phase 1. FR1–FR17 are Phase 1 (delivered). FR18 onward is Phase 2.
 
-- **FR1.** Device registration with public key; device token issued once. Duplicate rejected.
-  Max 3 devices per user.
-- **FR2.** Top-up creates balanced ledger transaction; balance reflects it.
-- **FR3.** Pouch provisioning debits online balance atomically; returns signed cert.
-  Rejects if online balance < requested.
-- **FR3a.** Pre-transaction balance + cert check (UX guard). Never trusted as anti-double-spend.
-- **FR4.** Offline txn with valid signature + counter > `last_counter` accepted.
-  Replayed `(sender_device_id, counter)` rejected by DB constraint.
-- **FR5.** Sync ingest returns `202` within ~200 ms; no ledger writes.
-- **FR6.** Worker settles valid batch exactly once; duplicate upload creates no duplicate entries.
-- **FR7.** Over-limit batch flagged, not posted.
-- **FR8.** Malformed batch fails with reason; does not crash or block worker.
-- **FR9.** Reconciliation flags any certificate whose arithmetic doesn't reconcile.
-- **FR10.** Admin read endpoints surface devices, balances, certs, syncs, flagged transactions.
-- **FR11.** At sync, unspent pouch portion refunded to online balance; cert closed `SETTLED`.
-- **FR12.** Batch synced after cert expiry is settled but flagged `EXPIRED_CERT_LATE_SYNC`.
-- **FR13.** At most one `ACTIVE` cert per device; new pouch-load rejected if one exists.
-- **FR14.** Balance enquiry returns online balance + pouch committed without any ledger writes.
-- **FR15.** POST /admin/auth/login accepts the configured password and returns the admin token.
-  Returns 401 on wrong password. Returns 429 after 5 failed attempts from the same IP
-  within 5 minutes.
-- **FR16.** PATCH /admin/flagged/{flagId}/resolve sets resolved=true and resolved_at=now().
-  Returns 404 if not found. Returns 409 if already resolved.
-- **FR17.** PATCH /admin/devices/{deviceId}/status updates device status to
-  ACTIVE, SUSPENDED, or LOCKED. Returns 404 if not found. Returns 400 for invalid status.
-  A SUSPENDED device's auth requests return 401 immediately.
+### Phase 1 (delivered — kept for reference, do not renumber)
+- **FR1–FR14.** Device registration, top-up, pouch provisioning, offline transfer, sync
+  ingest, settlement, reconciliation, admin reads, balance enquiry. (Full text: see repo
+  history / prior PRD revisions — unchanged, still in force.)
+- **FR15.** Admin/writer login (JWT).
+- **FR16.** Resolve flagged transaction.
+- **FR17.** Update device status (ADMIN action).
+
+### Phase 2 — NEW
+
+- **FR18.** `POST /device/transfer` creates a balanced `ONLINE_TRANSFER` ledger posting
+  (DEBIT sender.ONLINE, CREDIT receiver.ONLINE) when: device token valid, `Idempotency-Key`
+  header present, receiver exists, receiver != sender, amount > 0 and ≤ configured max,
+  sender balance sufficient. Returns 200 with new sender balance. Rejects self-transfer
+  with 400. Rejects insufficient balance with 422. Rejects missing idempotency key with 400.
+- **FR19.** A duplicate `Idempotency-Key` for the same device on `/device/transfer` returns
+  the original response without creating a second ledger posting (enforced by a `UNIQUE`
+  DB constraint, not application logic alone).
+- **FR20.** `POST /device/payment-request` creates a `PENDING` payment request with a
+  unique nonce, a configurable expiry (default 10 minutes), and a QR-encodable payload.
+- **FR21.** `POST /device/payment-request/{id}/pay` settles a `PENDING`, non-expired
+  request as a balanced `QR_PAYMENT_ONLINE` posting, marks it `PAID`. Rejects: unknown
+  request (404), already-paid or already-expired request (409), expired-at-check-time
+  request (410, and marks it `EXPIRED`), self-payment (400), insufficient balance (422),
+  missing idempotency key (400), duplicate idempotency key (returns original result, no
+  double-post — same guarantee as FR19).
+- **FR22.** A scheduled job (`payment-request-expiry`, ShedLock-guarded) marks `PENDING`
+  payment requests past their `expiresAt` as `EXPIRED` at least once per minute, independent
+  of the pay endpoint's own real-time expiry check.
+- **FR23.** Offline transactions carry an `origin` field (`BLE` or `QR`), defaulting to
+  `BLE`. Settlement logic, signature verification, and counter/replay checks are identical
+  regardless of origin — `origin` is informational only and never affects trust decisions.
+- **FR24.** `transfer.online.max-amount-idr` and `qr-payment.request-ttl-minutes` are
+  required, environment-configurable properties with documented defaults (Rp 10,000,000
+  and 10 minutes respectively). No hardcoded fallback exists in code — a missing value
+  fails application startup.
 
 ---
 
 ## 7. Technical constraints
 
 - Hostinger KVM2: 2 vCPU, 8 GB RAM, Ubuntu 24.04.
-- Backend stack: Java 21 / Spring Boot 3.x / PostgreSQL 16 / Mosquitto / Caddy / Docker Compose.
-- Frontend (backoffice): Next.js (App Router) / Bun / shadcn/ui / Tailwind CSS / next-themes.
-- ESP32 firmware: C/C++, BLE + Ed25519 on-device.
-- Monitoring: Spring Boot Actuator + Uptime Kuma; optional Grafana Cloud agent.
-- Backups: nightly restic → Cloudflare R2 / Backblaze B2 + Hostinger snapshots.
-- CI/CD: GitHub Actions → GHCR → VPS deploy via SSH on push to `main`.
+- Backend: Java 21 / Spring Boot 3.x / PostgreSQL 16 / Mosquitto / Caddy / Docker Compose.
+- Backoffice: Next.js 16 / Bun / shadcn/ui.
+- Landing page: Next.js 16, SEO-first, public article API.
+- ESP32 firmware: C/C++, BLE + Ed25519 on-device (firmware team, separately scoped —
+  Bayar QR camera/scan/render work included).
+- CI/CD: GitHub Actions → GHCR → VPS deploy via SSH on push to `main`, one pipeline per repo.
+- **New (Phase 2):** online endpoints add no new infrastructure — they run in the existing
+  `api` container, synchronous, no new worker responsibilities except the payment-request
+  expiry job.
 
 ---
 
 ## 8. Success criteria
 
+**Phase 1 (met):**
 1. Two devices complete an offline transfer with no internet; settles correctly after reconnect.
-2. Replayed batch creates no duplicate balance — demonstrable on demand.
+2. Replayed batch creates no duplicate balance.
 3. Over-limit or tampered batch caught and flagged, not posted.
 4. Cek Saldo figures reconcile correctly across offline-spend-then-sync cycle.
 5. Full stack runs within 8 GB without swapping under demo load.
-6. Backup can be restored (tested at least once before demo).
-7. Admin can log into the backoffice, create a user, register a device, top up, and view
-   flagged transactions — all from the UI without touching the terminal.
+6. Backup can be restored (tested at least once).
+7. Admin can complete the full workflow (create user, register device, top up, view flags)
+   from the backoffice UI alone.
+
+**Phase 2 (new):**
+8. A user can transfer online directly to another user, and the receiving user's balance
+   reflects it immediately, without any BLE or pouch involvement.
+9. A duplicate submission of the same online transfer (simulating a network retry) never
+   results in the money moving twice — demonstrable by submitting the identical request
+   with the same `Idempotency-Key` twice in a row.
+10. A Bayar QR Online payment request that is paid once cannot be paid again — a second
+    payment attempt against the same request is rejected.
+11. A Bayar QR Online payment request past its expiry is rejected even if the client submits
+    a technically well-formed payment attempt.
+12. A Bayar QR Offline transaction settles through the identical verification path as a
+    manually-initiated BLE transfer — demonstrable by comparing settlement behavior for
+    `origin=BLE` vs `origin=QR` transactions with otherwise identical signed payloads.
 
 ---
 
 ## 9. Decisions & risks
 
-- **R1 (critical path):** firmware, not backend. Mitigate with device simulator from PR6 onward.
-- **R2: multi-hop re-spend. DECIDED — no.** Received offline funds → online balance at sync.
-- **R3: pouch limit & expiry. DECIDED.** Max 3 devices per user; cert validity 24 hours.
-- **R4: PIN/auth UX.** Device-local lockout; confirm with hardware team.
-- **R5: QRIS. CONFIRMED** cosmetic for prototype.
-- **R6: clock trust. CONFIRMED.** Counters (not timestamps) are the integrity mechanism.
-- **R7: balance ambiguity offline. CONFIRMED.** Two views exist (server online + device local pouch);
-  Cek Saldo labels both and explains the difference.
+### Phase 1 (resolved, kept for reference)
+- R1–R7, Q1–Q4, §9a/§9b as previously documented — unchanged, still in force. Max pouch
+  Rp 3,000,000, 24h certificate validity, no multi-hop offline re-spend, etc.
 
-### 9a. Settlement rules (Q1–Q4)
+### Phase 2 — NEW
 
-- **Q1:** Offline transfer → DEBIT sender.pouch, CREDIT receiver.ONLINE (never a pouch).
-- **Q2:** Late sync (post-expiry) → settle + flag `EXPIRED_CERT_LATE_SYNC`.
-- **Q3:** Unspent at sync → `POUCH_REFUND` to online balance; cert → `SETTLED`.
-- **Q4:** One active cert per device; new load rejected until prior is settled.
+- **R8: Idempotency key ownership. DECIDED — device-generated.** The device, not the
+  server, generates the `Idempotency-Key` for online transfer and Bayar QR payment
+  requests. Rationale: only the device knows whether a given request is a genuine retry of
+  an ambiguous prior attempt (e.g. after a timeout) or an intentionally new transaction.
 
-### 9b. Max pouch amount (IDR)
+- **R9: Self-transfer. DECIDED — always rejected.** Both `/device/transfer` and paying
+  one's own `/device/payment-request` are rejected with 400. No legitimate use case for
+  a user moving money to themselves via these endpoints exists at this stage.
 
-**DECIDED: Rp 3,000,000** (confirmed by Faisal).
+- **R10: Online transfer maximum amount. DECIDED — Rp 10,000,000, configurable.** Chosen
+  as a round, generous ceiling — well above expected typical transaction sizes, while still
+  bounding the damage of any single error, bug, or abuse case. Unlike the offline pouch
+  limit (which exists because a lost/compromised device is unrecoverable), this limit exists
+  purely as a sanity ceiling, since online transfers are always server-verified in real time
+  with no offline trust window. **Must be revisited before any real-money deployment** — no
+  documented business rationale beyond "a safe round number," same caveat as the original
+  pouch limit decision.
 
-Implement as `pouch.max-amount-idr=3000000` in `application.yml` — a required config property
-with no hardcoded fallback. A missing value must cause a startup failure, not silently default
-to a wrong number in a future real-money deployment.
+- **R11: Bayar QR Offline reuses the existing BLE trust model.** No new cryptographic
+  design was needed — the QR is purely a data-entry shortcut. This was confirmed explicitly
+  with the client to avoid the more complex (and initially considered) alternative of
+  encoding a fully signed transaction into the QR itself, which would have required solving
+  QR data-capacity constraints and a different security model with no live BLE handshake to
+  anchor trust to.
 
-⚠️ This was decided casually for the prototype with no documented rationale. With 3 devices
-per user and 24h cert validity, maximum offline exposure per user is Rp 9,000,000. Must be
-revisited with a proper risk review before any real-money deployment.
+- **R12: Naming — "Bayar QR" not "QRIS".** Explicit client decision. QRIS is a registered
+  Bank Indonesia standard; using the name for a non-interoperable in-ecosystem feature risks
+  user confusion and potential regulatory scrutiny if the product scales. See NG9.
 
 ---
 
 ## 10. Milestones
 
+### Phase 1 — Complete
+All PRs (scaffold through admin read endpoints, real auth, articles, backoffice, landing
+page, infrastructure) merged, deployed, and verified in production as of Phase 1 close.
+
+### Phase 2 — Online Transactions & Bayar QR (current)
+
 | # | Task | Status |
 |---|------|--------|
-| 1 | Product definition frozen | ✅ done |
-| 2 | ERD + schema DDL + Flyway baseline | ✅ done |
-| 3 | VPS hardened, Docker Compose up, CI/CD working | ✅ done |
-| 4a | PR1 — Scaffold (profiles, Flyway, Testcontainers smoke test) | ✅ merged |
-| 4b | PR2 — Auth + device registration (FR1) | ✅ merged |
-| 4c | PR3 — Ledger core (double-entry posting, balance derivation) | ✅ merged |
-| 4d | PR4 — Online top-up (FR2) | ✅ merged |
-| 4e | PR4b — Balance enquiry / Cek Saldo (FR14) | ✅ merged |
-| 4f | PR5 — Pouch provisioning + certificate (FR3, FR13) | ✅ merged |
-| 4g | PR6 — Sync ingest endpoint (FR5) | ✅ merged |
-| 5a | PR7 — Worker bootstrap + inbox poller | ✅ merged |
-| 5b | PR8 — Settlement (FR4, FR6–FR8, FR11, FR12) | ✅ merged |
-| 5c | PR9 — Reconciliation job (FR9) | ✅ merged |
-| 5d | PR10 — MQTT publisher | ✅ merged |
-| 5e | PR11 — Admin read endpoints (FR10) | ✅ merged |
-| 6 | Caddy + domain setup (api.dompetgaruda.com + mqtt.dompetgaruda.com) | ✅ done |
-| 7 | Mosquitto MQTT broker with TLS | ✅ done |
-| 8 | Backoffice backend (FR15, FR16, FR17) | ⬅ current |
-| 9 | Backoffice frontend (Next.js, shadcn/ui, backoffice.dompetgaruda.com) | pending |
-| 10 | Device simulator | pending |
-| 11 | Integration + safety testing | pending |
-| 12 | Backup setup + test restore | pending |
-| 13 | Demo | pending |
+| 1 | RAB & Proposal drafted, reviewed | ✅ done |
+| 2 | RAB & Proposal approved by Faisal | ✅ done |
+| 3 | Invoice issued | ✅ done |
+| 4 | CLAUDE.md / PRD.md updated for Phase 2 scope | ✅ done (this revision) |
+| 5 | Transfer Online (FR18, FR19) | ⬅ next |
+| 6 | Bayar QR Online (FR20–FR22) | pending |
+| 7 | Bayar QR Offline — backend portion (FR23) | pending |
+| 8 | Device simulator updated for new flows | pending |
+| 9 | End-to-end testing across all Phase 2 features | pending |
+| 10 | Documentation updates (README, MQTT contract, API examples) | pending |
+| 11 | Production deployment & verification | pending |
+| 12 | Payment received (Bukti Pembayaran finalized) | pending |
 
----
-
-## 11. Backoffice Admin Panel (demo scope)
-
-**Goal:** A web UI at `backoffice.dompetgaruda.com` for Faisal to manage users, devices,
-sync batches, and flagged transactions during the demo.
-
-**Tech stack:** Next.js (App Router), Bun, shadcn/ui, Tailwind CSS, next-themes.
-Deployed as a Docker container served by Caddy at `backoffice.dompetgaruda.com`.
-
-**Color palette (light mode):**
-- Primary: `#5d7066` (sage green — buttons, active nav, focus states)
-- Surface: `#f1f1f1` (light gray — page background)
-- Accent: `#d9c6b0` (warm sand — badges, highlights, tags)
-- Dark mode derives from the same palette (darkened sage + warm neutrals)
-
-**Pages in scope for demo:**
-
-| Page | Purpose | Key actions |
-|------|---------|-------------|
-| Login | Authenticate admin | POST /admin/auth/login |
-| Dashboard | Overview: totals, health | GET /admin/users, /admin/flagged |
-| Users | Manage account holders | List, create, top-up per user |
-| Devices | Manage physical devices | List, register, suspend/unlock |
-| Sync Batches | View upload history | List (read-only), see status/errors |
-| Flagged Transactions | View and resolve anomalies | List, resolve per flag |
-
-**Out of scope for this panel (phase 3):**
-- Writer role and article management
-- Landing page content management
-- Multi-admin accounts
-- Role-based access control beyond admin/non-admin
-
-**Backend prerequisites (must be merged before FE starts):**
-- FR15: POST /admin/auth/login
-- FR16: PATCH /admin/flagged/{flagId}/resolve
-- FR17: PATCH /admin/devices/{deviceId}/status
+Build order follows the RAB week-by-week plan: Transfer Online (week 1) → Bayar QR Online
+(week 2) → Bayar QR Offline backend (week 3) → cross-cutting work (week 4).
