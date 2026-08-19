@@ -270,16 +270,21 @@ public class SyncSettlementService {
                     )
             ));
 
+            // Origin is purely observational (FR23, §14.3 point 3) — never read by any
+            // verification, signature, or pouch-limit decision above. Defaults to BLE if
+            // the firmware batch payload omits it.
+            String origin = txn.origin() != null ? txn.origin() : "BLE";
+
             jdbc.update(
                     "INSERT INTO offline_transactions " +
                     "(offline_txn_id, sender_device_id, receiver_device_id, certificate_id, " +
                     " batch_id, amount, counter, device_timestamp, sender_signature, " +
-                    " receiver_signature, settlement_status, settled_at) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SETTLED', now())",
+                    " receiver_signature, settlement_status, settled_at, origin) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SETTLED', now(), ?)",
                     txn.offlineTxnId(), senderDeviceId, txn.receiverDeviceId(), certId, batchId,
                     txn.amount(), txn.counter(),
                     txn.deviceTimestamp() != null ? Timestamp.from(txn.deviceTimestamp()) : null,
-                    txn.senderSignature(), txn.receiverSignature());
+                    txn.senderSignature(), txn.receiverSignature(), origin);
 
             jdbc.update(
                     "UPDATE devices SET last_counter = ?, updated_at = now() WHERE device_id = ?",

@@ -180,7 +180,7 @@ docs/api-examples/       # curl scripts for every endpoint
 | `ledger_entries` | Immutable double-entry postings (append-only) |
 | `offline_certificates` | Server-signed authorisation for an offline pouch (24 h expiry) |
 | `sync_inbox` | Raw device-uploaded batches; Postgres-backed worker job queue |
-| `offline_transactions` | Settled BLE transfers with replay-protection unique constraint |
+| `offline_transactions` | Settled BLE/QR transfers with replay-protection unique constraint; `origin` (`BLE`/`QR`) is informational only (FR23) |
 | `flagged_transactions` | Anomalies from settlement/reconciliation |
 | `shedlock` | Distributed job lock for worker `@Scheduled` jobs |
 | `articles` | Backoffice articles (DRAFT/PUBLISHED) with `author_id` FK to `admin_users` |
@@ -209,6 +209,7 @@ docs/api-examples/       # curl scripts for every endpoint
 - [x] **PR15 — Articles CRUD (ADMIN/WRITER)** — `articles` table (Flyway V4) with `author_id` FK to `admin_users`; auto slug generation with `-2`/`-3` collision suffixing; `POST`/`GET`/`PATCH`/`publish`/`unpublish`/`DELETE` under `/admin/articles/**` gated to ADMIN or WRITER via the JWT role claim (`RoleGuard`); public `GET /public/articles` and `GET /public/articles/{slug}` (PUBLISHED only, no auth); new `rizkiwriter@dompetgaruda.com` WRITER account seeded
 - [x] **PR16 — FR18/FR19 — Transfer Online Antar Pengguna** — `POST /device/transfer`: synchronous ONLINE_TRANSFER posting (DEBIT sender.online → CREDIT receiver.online), self-transfer rejected, configurable `transfer.online.max-amount-idr` (locked at Rp 10,000,000); device-generated `Idempotency-Key` enforced by a `UNIQUE` constraint on a new shared `idempotency_keys` table (also used by the upcoming Bayar QR Online PR) — duplicate keys replay the original response with zero re-posting; best-effort `wallet/{deviceId}/payment-received` MQTT hint
 - [x] **PR17 — FR20/FR21/FR22 — Bayar QR Online** — `POST /device/payment-request` (create, TTL-bound nonce + QR payload) and `POST /device/payment-request/{requestId}/pay` (synchronous QR_PAYMENT_ONLINE posting); reuses the exact `idempotency_keys` table and replay mechanism from PR16 (Transfer Online); nonce-reuse protection via request status (409 on already PAID/EXPIRED); real-time expiry check at pay time (410 + marks EXPIRED) backed by an independent `payment-request-expiry` ShedLock scheduled sweep (§14.2 belt-and-suspenders) every 1 minute
+- [x] **PR18 — FR23 — Bayar QR Offline (backend portion)** — reuses the existing offline BLE Transfer/settlement flow unchanged; adds an `origin` (`BLE`/`QR`) column to `offline_transactions`, populated from an optional field in the signed sync batch and defaulting to `BLE`; purely informational — never read by signature verification, counter/replay, or pouch-limit checks; QR payload spec for the firmware team at `docs/QR_OFFLINE_PAYLOAD_SPEC.md`; no new endpoint, no new payment_requests-style table (that pattern is Bayar QR Online-only)
 
 ---
 

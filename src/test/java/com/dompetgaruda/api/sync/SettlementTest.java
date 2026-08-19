@@ -135,7 +135,7 @@ class SettlementTest extends WorkerIntegrationTestBase {
         String msg   = buildMsg(txnId, senderDeviceId, receiverDeviceId, TRANSFER_AMOUNT, 1L, ts);
         SyncOfflineTxnRequest txn = new SyncOfflineTxnRequest(
                 txnId, receiverDeviceId, TRANSFER_AMOUNT, 1L, ts,
-                sign(msg, SENDER_KEYS), sign(msg, RECEIVER_KEYS));
+                sign(msg, SENDER_KEYS), sign(msg, RECEIVER_KEYS), null);
 
         insertBatch(batchId, senderDeviceId, certId, List.of(txn), false);
         poller.processOneRow();
@@ -179,7 +179,7 @@ class SettlementTest extends WorkerIntegrationTestBase {
         String msg   = buildMsg(txnId, senderDeviceId, receiverDeviceId, TRANSFER_AMOUNT, 1L, ts);
         SyncOfflineTxnRequest txn = new SyncOfflineTxnRequest(
                 txnId, receiverDeviceId, TRANSFER_AMOUNT, 1L, ts,
-                sign(msg, SENDER_KEYS), sign(msg, RECEIVER_KEYS));
+                sign(msg, SENDER_KEYS), sign(msg, RECEIVER_KEYS), null);
 
         // First batch — settles successfully
         UUID batchId1 = UUID.randomUUID();
@@ -222,13 +222,13 @@ class SettlementTest extends WorkerIntegrationTestBase {
         String msg1 = buildMsg(txnId1, senderDeviceId, receiverDeviceId, TRANSFER_AMOUNT, 1L, ts);
         SyncOfflineTxnRequest txn1 = new SyncOfflineTxnRequest(
                 txnId1, receiverDeviceId, TRANSFER_AMOUNT, 1L, ts,
-                sign(msg1, SENDER_KEYS), sign(msg1, RECEIVER_KEYS));
+                sign(msg1, SENDER_KEYS), sign(msg1, RECEIVER_KEYS), null);
 
         // Transaction 2: counter=1 again (replay of same counter)
         String msg2 = buildMsg(txnId2, senderDeviceId, receiverDeviceId, 10_000L, 1L, ts);
         SyncOfflineTxnRequest txn2 = new SyncOfflineTxnRequest(
                 txnId2, receiverDeviceId, 10_000L, 1L, ts,
-                sign(msg2, SENDER_KEYS), sign(msg2, RECEIVER_KEYS));
+                sign(msg2, SENDER_KEYS), sign(msg2, RECEIVER_KEYS), null);
 
         UUID batchId = UUID.randomUUID();
         insertBatch(batchId, senderDeviceId, certId, List.of(txn1, txn2), false);
@@ -264,7 +264,7 @@ class SettlementTest extends WorkerIntegrationTestBase {
         String msg   = buildMsg(txnId, senderDeviceId, receiverDeviceId, tooMuch, 1L, ts);
         SyncOfflineTxnRequest txn = new SyncOfflineTxnRequest(
                 txnId, receiverDeviceId, tooMuch, 1L, ts,
-                sign(msg, SENDER_KEYS), sign(msg, RECEIVER_KEYS));
+                sign(msg, SENDER_KEYS), sign(msg, RECEIVER_KEYS), null);
 
         UUID batchId = UUID.randomUUID();
         insertBatch(batchId, senderDeviceId, certId, List.of(txn), false);
@@ -301,7 +301,7 @@ class SettlementTest extends WorkerIntegrationTestBase {
         // Sign sender message with RECEIVER's private key instead → bad sender sig
         SyncOfflineTxnRequest txn = new SyncOfflineTxnRequest(
                 txnId, receiverDeviceId, TRANSFER_AMOUNT, 1L, ts,
-                sign(msg, RECEIVER_KEYS), sign(msg, RECEIVER_KEYS));
+                sign(msg, RECEIVER_KEYS), sign(msg, RECEIVER_KEYS), null);
 
         UUID batchId = UUID.randomUUID();
         insertBatch(batchId, senderDeviceId, certId, List.of(txn), false);
@@ -333,7 +333,7 @@ class SettlementTest extends WorkerIntegrationTestBase {
         // Sign receiver message with SENDER's private key instead → bad receiver sig
         SyncOfflineTxnRequest txn = new SyncOfflineTxnRequest(
                 txnId, receiverDeviceId, TRANSFER_AMOUNT, 1L, ts,
-                sign(msg, SENDER_KEYS), sign(msg, SENDER_KEYS));
+                sign(msg, SENDER_KEYS), sign(msg, SENDER_KEYS), null);
 
         UUID batchId = UUID.randomUUID();
         insertBatch(batchId, senderDeviceId, certId, List.of(txn), false);
@@ -387,7 +387,7 @@ class SettlementTest extends WorkerIntegrationTestBase {
         String msg = buildMsg(txnId, senderDeviceId, receiverDeviceId, TRANSFER_AMOUNT, 1L, ts);
         SyncOfflineTxnRequest txn = new SyncOfflineTxnRequest(
                 txnId, receiverDeviceId, TRANSFER_AMOUNT, 1L, ts,
-                sign(msg, SENDER_KEYS), sign(msg, RECEIVER_KEYS));
+                sign(msg, SENDER_KEYS), sign(msg, RECEIVER_KEYS), null);
         insertBatch(validBatchId, senderDeviceId, certId, List.of(txn), false);
 
         boolean found2 = poller.processOneRow();
@@ -417,7 +417,7 @@ class SettlementTest extends WorkerIntegrationTestBase {
         String msg   = buildMsg(txnId, senderDeviceId, receiverDeviceId, TRANSFER_AMOUNT, 1L, ts);
         SyncOfflineTxnRequest txn = new SyncOfflineTxnRequest(
                 txnId, receiverDeviceId, TRANSFER_AMOUNT, 1L, ts,
-                sign(msg, SENDER_KEYS), sign(msg, RECEIVER_KEYS));
+                sign(msg, SENDER_KEYS), sign(msg, RECEIVER_KEYS), null);
 
         // synced_after_expiry = true
         insertBatch(batchId, senderDeviceId, certId, List.of(txn), true);
@@ -455,7 +455,7 @@ class SettlementTest extends WorkerIntegrationTestBase {
         String msg   = buildMsg(txnId, senderDeviceId, receiverDeviceId, txnAmount, 1L, ts);
         SyncOfflineTxnRequest txn = new SyncOfflineTxnRequest(
                 txnId, receiverDeviceId, txnAmount, 1L, ts,
-                sign(msg, SENDER_KEYS), sign(msg, RECEIVER_KEYS));
+                sign(msg, SENDER_KEYS), sign(msg, RECEIVER_KEYS), null);
 
         insertBatch(batchId, senderDeviceId, certId, List.of(txn), false);
         poller.processOneRow();
@@ -494,10 +494,10 @@ class SettlementTest extends WorkerIntegrationTestBase {
         String msg2   = buildMsg(txnId2, senderDeviceId, receiverDeviceId, amt2, 2L, ts);
         SyncOfflineTxnRequest txn1 = new SyncOfflineTxnRequest(
                 txnId1, receiverDeviceId, amt1, 1L, ts,
-                sign(msg1, SENDER_KEYS), sign(msg1, RECEIVER_KEYS));
+                sign(msg1, SENDER_KEYS), sign(msg1, RECEIVER_KEYS), null);
         SyncOfflineTxnRequest txn2 = new SyncOfflineTxnRequest(
                 txnId2, receiverDeviceId, amt2, 2L, ts,
-                sign(msg2, SENDER_KEYS), sign(msg2, RECEIVER_KEYS));
+                sign(msg2, SENDER_KEYS), sign(msg2, RECEIVER_KEYS), null);
 
         insertBatch(batchId, senderDeviceId, certId, List.of(txn1, txn2), false);
         poller.processOneRow();
@@ -508,6 +508,104 @@ class SettlementTest extends WorkerIntegrationTestBase {
 
         // last_counter updated to the highest counter processed
         assertThat(lastCounter(senderDeviceId)).isEqualTo(2L);
+
+        assertLedgerBalanced();
+    }
+
+    // -------------------------------------------------------------------------
+    // Test k: origin="QR" settles identically to BLE — same checks, same posting,
+    //         and the resulting row is stamped origin='QR' (FR23, §14.3)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void qrOrigin_settlesIdenticallyToBleAndPersistsOrigin() throws Exception {
+        setupLedgerBalance(ISSUED_AMOUNT);
+        UUID certId  = insertCert(senderDeviceId, senderPouchAccountId, ISSUED_AMOUNT, Instant.now().plusSeconds(86400));
+        UUID batchId = UUID.randomUUID();
+        UUID txnId   = UUID.randomUUID();
+        Instant ts   = Instant.parse("2026-07-07T10:00:00Z");
+
+        String msg = buildMsg(txnId, senderDeviceId, receiverDeviceId, TRANSFER_AMOUNT, 1L, ts);
+        SyncOfflineTxnRequest txn = new SyncOfflineTxnRequest(
+                txnId, receiverDeviceId, TRANSFER_AMOUNT, 1L, ts,
+                sign(msg, SENDER_KEYS), sign(msg, RECEIVER_KEYS), "QR");
+
+        insertBatch(batchId, senderDeviceId, certId, List.of(txn), false);
+        poller.processOneRow();
+
+        assertThat(batchStatus(batchId)).isEqualTo("DONE");
+        assertThat(certStatus(certId)).isEqualTo("SETTLED");
+        assertThat(offlineTxnStatus(txnId)).isEqualTo("SETTLED");
+        assertThat(offlineTxnOrigin(txnId)).isEqualTo("QR");
+
+        // Same postings as the BLE happy path
+        assertLedgerEntries("OFFLINE_TRANSFER", txnId.toString(),
+                senderPouchAccountId, "DEBIT", TRANSFER_AMOUNT);
+        assertLedgerEntries("OFFLINE_TRANSFER", txnId.toString(),
+                receiverOnlineAccountId, "CREDIT", TRANSFER_AMOUNT);
+
+        assertLedgerBalanced();
+    }
+
+    // -------------------------------------------------------------------------
+    // Test l: absent origin defaults to 'BLE' — regression check, existing
+    //         (pre-FR23) firmware payloads settle unchanged
+    // -------------------------------------------------------------------------
+
+    @Test
+    void missingOrigin_defaultsToBle() throws Exception {
+        setupLedgerBalance(ISSUED_AMOUNT);
+        UUID certId  = insertCert(senderDeviceId, senderPouchAccountId, ISSUED_AMOUNT, Instant.now().plusSeconds(86400));
+        UUID batchId = UUID.randomUUID();
+        UUID txnId   = UUID.randomUUID();
+        Instant ts   = Instant.parse("2026-07-07T10:00:00Z");
+
+        String msg = buildMsg(txnId, senderDeviceId, receiverDeviceId, TRANSFER_AMOUNT, 1L, ts);
+        SyncOfflineTxnRequest txn = new SyncOfflineTxnRequest(
+                txnId, receiverDeviceId, TRANSFER_AMOUNT, 1L, ts,
+                sign(msg, SENDER_KEYS), sign(msg, RECEIVER_KEYS), null);
+
+        insertBatch(batchId, senderDeviceId, certId, List.of(txn), false);
+        poller.processOneRow();
+
+        assertThat(batchStatus(batchId)).isEqualTo("DONE");
+        assertThat(offlineTxnStatus(txnId)).isEqualTo("SETTLED");
+        assertThat(offlineTxnOrigin(txnId)).isEqualTo("BLE");
+
+        assertLedgerBalanced();
+    }
+
+    // -------------------------------------------------------------------------
+    // Test m: a QR-origin transaction is flagged using the exact same reasons/
+    //         logic as a BLE-origin one — origin never gates a verification branch
+    // -------------------------------------------------------------------------
+
+    @Test
+    void qrOrigin_overLimitFlaggedSameAsBle() throws Exception {
+        long smallIssued = 30_000L;
+        setupLedgerBalance(smallIssued);
+        UUID certId  = insertCert(senderDeviceId, senderPouchAccountId, smallIssued, Instant.now().plusSeconds(86400));
+        UUID txnId   = UUID.randomUUID();
+        Instant ts   = Instant.parse("2026-07-07T10:00:00Z");
+        long tooMuch = 50_000L; // exceeds issued 30_000
+
+        String msg = buildMsg(txnId, senderDeviceId, receiverDeviceId, tooMuch, 1L, ts);
+        SyncOfflineTxnRequest txn = new SyncOfflineTxnRequest(
+                txnId, receiverDeviceId, tooMuch, 1L, ts,
+                sign(msg, SENDER_KEYS), sign(msg, RECEIVER_KEYS), "QR");
+
+        UUID batchId = UUID.randomUUID();
+        insertBatch(batchId, senderDeviceId, certId, List.of(txn), false);
+        poller.processOneRow();
+
+        // Identical OVER_LIMIT flagging behavior as the BLE-origin overLimit test above —
+        // same reason, same absence of an offline_transactions row (origin never inserted
+        // for a rejected txn, exactly like a BLE-origin rejection).
+        Integer overLimitFlags = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM flagged_transactions WHERE reason = 'OVER_LIMIT' AND batch_id = ?",
+                Integer.class, batchId);
+        assertThat(overLimitFlags).isEqualTo(1);
+        assertThat(countOfflineTxns(txnId)).isEqualTo(0);
 
         assertLedgerBalanced();
     }
@@ -609,7 +707,7 @@ class SettlementTest extends WorkerIntegrationTestBase {
                                     long amount, long counter, Instant deviceTimestamp) {
         return SyncSettlementService.buildSigningMessage(
                 new SyncOfflineTxnRequest(offlineTxnId, receiverDeviceId, amount, counter,
-                        deviceTimestamp, null, null),
+                        deviceTimestamp, null, null, null),
                 senderDeviceId);
     }
 
@@ -630,6 +728,12 @@ class SettlementTest extends WorkerIntegrationTestBase {
     private String offlineTxnStatus(UUID txnId) {
         return jdbc.queryForObject(
                 "SELECT settlement_status FROM offline_transactions WHERE offline_txn_id = ?",
+                String.class, txnId);
+    }
+
+    private String offlineTxnOrigin(UUID txnId) {
+        return jdbc.queryForObject(
+                "SELECT origin FROM offline_transactions WHERE offline_txn_id = ?",
                 String.class, txnId);
     }
 
