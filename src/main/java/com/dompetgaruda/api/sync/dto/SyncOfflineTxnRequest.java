@@ -36,5 +36,11 @@ public record SyncOfflineTxnRequest(
 
         @Schema(description = "Base64-encoded Ed25519 acknowledgement signature by the receiver device.",
                 example = "base64-encoded-bytes")
-        String receiverSignature
+        String receiverSignature,
+
+        @Schema(description = "Optional origin of this transaction: 'BLE' (default) or 'QR' " +
+                "(FR23). Informational only — never affects verification, signature, or " +
+                "pouch-limit checks. Defaults to 'BLE' if absent.",
+                example = "BLE")
+        String origin
 ) {}
