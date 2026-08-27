@@ -184,13 +184,15 @@ infrastructure costs, third-party security audits, large-scale load testing — 
 
 - **FR25.** `POST /admin/devices` provisions MQTT credentials for the new device
   (username=deviceId, password=the same device token) as a mandatory part of registration.
-  Failure to provision rolls back the entire registration (503). **Status: infrastructure
-  ready (Mosquitto Dynamic Security plugin migrated and tested manually); application code
-  (`MqttAdminClient`, integration into the registration endpoint) not yet written.**
+  Failure to provision rolls back the entire registration (503). **Status: delivered.**
+  `MqttAdminClient` (`@Profile("api")`) drives the Mosquitto Dynamic Security control API;
+  a provisioning failure throws and rolls back the whole registration transaction, mapped to
+  503 at the controller.
 - **FR26.** `PATCH /admin/devices/{deviceId}/status` revokes the device's MQTT access when
   status changes to `SUSPENDED`/`LOCKED`, and restores it when status returns to `ACTIVE`.
-  A failure at this step must not block the status change itself. **Status: not yet
-  implemented** — depends on FR25's `MqttAdminClient`.
+  A failure at this step must not block the status change itself. **Status: delivered.**
+  Runs strictly after the status row commits, wrapped in a try/catch that swallows every
+  exception and logs a WARNING — an MQTT/broker outage never blocks the status change.
 
 ---
 
@@ -320,7 +322,7 @@ page, infrastructure) merged, deployed, and verified in production as of Phase 1
 | 7 | Bayar QR Offline — backend portion (FR23) | ✅ **delivered, verified via code review + CI** |
 | 8 | Device simulator updated for new flows | pending |
 | 9 | End-to-end testing across all Phase 2 features | ✅ **done for the core happy/failure paths** (see §8); expiry-lapse path (item 11 above) still recommended |
-| 10 | Documentation updates (README, MQTT contract, API examples) | mostly done — MQTT contract update pending FR25/FR26 |
+| 10 | Documentation updates (README, MQTT contract, API examples) | ✅ done — `docs/MQTT_CONTRACT.md` added, README milestones updated for FR25/FR26 |
 | 11 | Production deployment & verification | ✅ **done** for all three features |
 | 12 | Payment received (Bukti Pembayaran finalized) | ✅ done — payment cleared |
 
@@ -333,8 +335,8 @@ page, infrastructure) merged, deployed, and verified in production as of Phase 1
 | 3 | Migrate Mosquitto to Dynamic Security plugin on VPS | ✅ done, manually |
 | 4 | Create `admin`, `dompet-worker`, `dompet-api-admin` accounts + `worker-role`, `device-role` | ✅ done |
 | 5 | Verify worker survives a full broker restart on the new system | ✅ done |
-| 6 | `MqttAdminClient` bean + `POST /admin/devices` integration (FR25) | pending |
-| 7 | `PATCH /admin/devices/{deviceId}/status` integration (FR26) | pending |
+| 6 | `MqttAdminClient` bean + `POST /admin/devices` integration (FR25) | ✅ delivered |
+| 7 | `PATCH /admin/devices/{deviceId}/status` integration (FR26) | ✅ delivered |
 | 8 | Rotate all MQTT passwords to distinct, strong values | pending (tech debt, tracked in CLAUDE.md §15) |
 
 ### Known follow-up items (not yet scheduled)
@@ -343,3 +345,8 @@ page, infrastructure) merged, deployed, and verified in production as of Phase 1
 - Server public-key rotation / OTA update plan (R16).
 - Receiving-device MQTT push notification for offline transfers (R17).
 - Device simulator update (Phase 2 item 8).
+- **`docker-compose.prod.yml`'s `api` service `environment:` block does not yet forward
+  `MQTT_BROKER_URL` / `MQTT_API_ADMIN_USERNAME` / `MQTT_API_ADMIN_PASSWORD` (CLAUDE.md §6's
+  recurring failure mode). The PR delivering FR25/FR26 (`MqttAdminClient`) deliberately did
+  NOT touch `docker-compose.prod.yml` per its stated scope — this must be added before the
+  next deploy that includes that PR, or the api container will crash-loop.

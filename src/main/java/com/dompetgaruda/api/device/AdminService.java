@@ -8,6 +8,10 @@ import com.dompetgaruda.api.common.repository.AccountRepository;
 import com.dompetgaruda.api.common.repository.DeviceRepository;
 import com.dompetgaruda.api.common.repository.UserRepository;
 import com.dompetgaruda.api.device.dto.*;
+import com.dompetgaruda.api.mqtt.MqttAdminClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,8 +20,16 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.Set;
 import java.util.UUID;
 
+/**
+ * {@code @Profile("api")}: depends on {@link MqttAdminClient}, which is itself api-profile-only
+ * (CLAUDE.md §3 / §15) — without this annotation the worker profile would fail to start with
+ * {@code NoSuchBeanDefinitionException} for {@code MqttAdminClient}.
+ */
 @Service
+@Profile("api")
 public class AdminService {
+
+    private static final Logger log = LoggerFactory.getLogger(AdminService.class);
 
     // Decision R3 (PRD §9): max 3 devices per user.
     private static final int MAX_DEVICES_PER_USER = 3;
@@ -26,15 +38,18 @@ public class AdminService {
     private final DeviceRepository deviceRepository;
     private final AccountRepository accountRepository;
     private final DeviceTokenService deviceTokenService;
+    private final MqttAdminClient mqttAdminClient;
 
     public AdminService(UserRepository userRepository,
                         DeviceRepository deviceRepository,
                         AccountRepository accountRepository,
-                        DeviceTokenService deviceTokenService) {
+                        DeviceTokenService deviceTokenService,
+                        MqttAdminClient mqttAdminClient) {
         this.userRepository    = userRepository;
         this.deviceRepository  = deviceRepository;
         this.accountRepository = accountRepository;
         this.deviceTokenService = deviceTokenService;
+        this.mqttAdminClient   = mqttAdminClient;
     }
 
     /**
@@ -92,6 +107,26 @@ public class AdminService {
     }
 
     /**
+     * Best-effort MQTT ACL sync after a device status change has already committed (FR26/R14).
+     * Deliberately NOT {@code @Transactional} and NOT called from inside {@link #updateDeviceStatus}
+     * — it must run strictly after the status row commits, and must never roll back or fail the
+     * status change. Swallows every exception and logs a WARNING instead: an emergency suspend of
+     * a lost/stolen device must never be blocked by an unrelated MQTT/broker outage.
+     */
+    public void syncMqttAccess(UUID deviceId, String newStatus) {
+        try {
+            if ("ACTIVE".equals(newStatus)) {
+                mqttAdminClient.reinstateDevice(deviceId.toString());
+            } else {
+                mqttAdminClient.revokeDevice(deviceId.toString());
+            }
+        } catch (Exception e) {
+            log.warn("MQTT access sync failed for device {} (new status {}): {}",
+                    deviceId, newStatus, e.getMessage());
+        }
+    }
+
+    /**
      * Registers a device against an existing user.
      * Enforces: max 3 devices per user (FR1 / Decision R3) and unique public key (FR1).
      * Generates a device API token, stores only its SHA-256 hash (CLAUDE.md §4 / §7.9).
@@ -121,6 +156,11 @@ public class AdminService {
         device.setDeviceLabel(req.label());
         device.setDeviceTokenHash(tokenPair.hash());
         deviceRepository.save(device);
+
+        // Mandatory, not best-effort (CLAUDE.md §15 / FR25): a failure here throws
+        // MqttProvisioningException (unchecked), which rolls back this entire transaction —
+        // the device row above is never persisted. Caught at the controller and mapped to 503.
+        mqttAdminClient.provisionDevice(device.getDeviceId().toString(), tokenPair.token());
 
         Account pouch = new Account();
         pouch.setUserId(user.getUserId());

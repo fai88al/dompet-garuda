@@ -1,11 +1,13 @@
 package com.dompetgaruda.api;
 
+import com.dompetgaruda.api.mqtt.MosquittoTestSupport;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 import javax.crypto.SecretKey;
@@ -45,11 +47,23 @@ public abstract class ApiIntegrationTestBase {
 
     protected static final UUID TEST_ADMIN_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
-    // Singleton container — started once per JVM, shared by all subclasses.
+    /** Shared MQTT admin credentials for {@link #mosquitto} — see {@link MosquittoTestSupport}. */
+    public static final String MQTT_ADMIN_USERNAME = "dompet-api-admin";
+    public static final String MQTT_ADMIN_PASSWORD = "test-admin-password";
+
+    // Singleton containers — started once per JVM, shared by all subclasses.
     // @Container is intentionally absent: that annotation stops the container after each
     // test class, which breaks the shared Spring context. We start it here explicitly and
     // let the JVM exit handle cleanup (Testcontainers ryuk reaps it).
     protected static final PostgreSQLContainer<?> postgres = startPostgres();
+
+    // Real eclipse-mosquitto:2 broker running the Dynamic Security plugin (CLAUDE.md §15).
+    // AdminService now depends on MqttAdminClient (@Profile("api")), so every api-profile test
+    // context needs a reachable broker just to construct that bean — this is it. Tests that
+    // specifically exercise MQTT provisioning behaviour (MqttProvisioningTest) use their OWN
+    // dedicated container instead, so they can freely stop/restart it without disrupting the
+    // shared broker every other test class relies on.
+    protected static final GenericContainer<?> mosquitto = startMosquitto();
 
     @SuppressWarnings("resource")
     private static PostgreSQLContainer<?> startPostgres() {
@@ -58,6 +72,19 @@ public abstract class ApiIntegrationTestBase {
                 .withUsername("dompet")
                 .withPassword("test");
         c.start();
+        return c;
+    }
+
+    @SuppressWarnings("resource")
+    private static GenericContainer<?> startMosquitto() {
+        GenericContainer<?> c = MosquittoTestSupport.newContainer(MQTT_ADMIN_USERNAME, MQTT_ADMIN_PASSWORD);
+        c.start();
+        try {
+            MosquittoTestSupport.createDeviceRole(
+                    MosquittoTestSupport.brokerUrl(c), MQTT_ADMIN_USERNAME, MQTT_ADMIN_PASSWORD);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to bootstrap shared test Mosquitto broker", e);
+        }
         return c;
     }
 
@@ -70,6 +97,9 @@ public abstract class ApiIntegrationTestBase {
         registry.add("pouch.max-amount-idr",        () -> 3_000_000L);
         registry.add("transfer.online.max-amount-idr", () -> 10_000_000L);
         registry.add("admin.jwt-secret",            () -> TEST_JWT_SECRET);
+        registry.add("mqtt.broker-url",             () -> MosquittoTestSupport.brokerUrl(mosquitto));
+        registry.add("mqtt.admin.username",         () -> MQTT_ADMIN_USERNAME);
+        registry.add("mqtt.admin.password",         () -> MQTT_ADMIN_PASSWORD);
     }
 
     /**

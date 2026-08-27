@@ -2,6 +2,9 @@
 # Registers an ESP32 device against an existing user.
 # The device's Ed25519 public key comes from the firmware at first setup.
 # The returned deviceToken is shown ONCE — provision it onto the device immediately.
+# It also doubles as the device's MQTT password (username=deviceId) — FR25 provisions this
+# automatically as a mandatory part of registration; a provisioning failure rolls the whole
+# registration back and returns 503 instead of 201 (see docs/MQTT_CONTRACT.md).
 #
 # Prerequisite: run 01-create-user.sh first and copy the returned userId below.
 
@@ -30,3 +33,4 @@ curl -s -X POST http://localhost:8080/admin/devices \
 #   404 — userId not found
 #   409 — publicKey already registered to another device
 #   422 — user already has 3 devices (maximum)
+#   503 — MQTT credential provisioning failed (FR25); nothing was persisted, safe to retry
