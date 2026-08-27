@@ -15,8 +15,7 @@ import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.*;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestPropertySource;
 import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.GenericContainer;
 
@@ -41,8 +40,26 @@ import static org.assertj.core.api.Assertions.assertThat;
  * stable across the outage — a bare stop/start on Testcontainers can reassign a new random host
  * port, breaking the already-connected {@code MqttAdminClient} bean living in this test's cached
  * Spring context.
+ *
+ * <p>The dedicated container is wired in via {@link ApiIntegrationTestBase}'s
+ * {@code mqttContainerOverride}/{@code mqttAdminUsernameOverride}/{@code mqttAdminPasswordOverride}
+ * fields, set in a static initializer below, rather than via this subclass's own
+ * {@code @DynamicPropertySource} method — empirically, a subclass's own such method is NOT
+ * reliably given precedence over the base class's, so the app ended up connected to the base's
+ * shared broker instead of this class's dedicated one when that was tried first.
+ *
+ * <p>{@code @TestPropertySource} adds a throwaway marker property purely so Spring's test
+ * context cache key differs from every other {@code ApiIntegrationTestBase} subclass. Without
+ * it, Spring sees an IDENTICAL configuration (same inherited {@code @DynamicPropertySource}
+ * method, same annotations) across every subclass and — since dynamic property VALUES are not
+ * part of that cache key, only the customizer/method identity is — happily reuses whichever
+ * subclass's context happened to be built first, complete with its already-connected
+ * {@code MqttAdminClient} pointed at the SHARED broker. This marker forces a genuinely separate,
+ * freshly-built context for this class, so {@code baseProps()} re-evaluates against the override
+ * fields set below rather than an already-cached bean from an unrelated test class.
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@TestPropertySource(properties = "mqtt.provisioning.test.context-marker=true")
 class MqttProvisioningTest extends ApiIntegrationTestBase {
 
     private static final String ADMIN_USERNAME = "dompet-api-admin-test";
@@ -50,6 +67,12 @@ class MqttProvisioningTest extends ApiIntegrationTestBase {
 
     @SuppressWarnings("resource")
     private static final GenericContainer<?> dedicatedMosquitto = startDedicated();
+
+    static {
+        mqttContainerOverride = dedicatedMosquitto;
+        mqttAdminUsernameOverride = ADMIN_USERNAME;
+        mqttAdminPasswordOverride = ADMIN_PASSWORD;
+    }
 
     private static GenericContainer<?> startDedicated() {
         GenericContainer<?> c = MosquittoTestSupport.newContainer(ADMIN_USERNAME, ADMIN_PASSWORD);
@@ -60,13 +83,6 @@ class MqttProvisioningTest extends ApiIntegrationTestBase {
             throw new IllegalStateException("Failed to bootstrap dedicated test Mosquitto broker", e);
         }
         return c;
-    }
-
-    @DynamicPropertySource
-    static void mqttProps(DynamicPropertyRegistry registry) {
-        registry.add("mqtt.broker-url", () -> MosquittoTestSupport.brokerUrl(dedicatedMosquitto));
-        registry.add("mqtt.admin.username", () -> ADMIN_USERNAME);
-        registry.add("mqtt.admin.password", () -> ADMIN_PASSWORD);
     }
 
     @Autowired TestRestTemplate rest;
@@ -182,11 +198,24 @@ class MqttProvisioningTest extends ApiIntegrationTestBase {
         return resp.getBody().userId();
     }
 
+    /**
+     * Registers a device, retrying briefly on 503. A prior test in this class may have just
+     * paused/unpaused the dedicated broker (simulating an outage) — Paho's automatic reconnect
+     * needs a moment to restore {@code MqttAdminClient}'s connection afterward, during which a
+     * fresh registration can transiently 503. This mirrors how a real caller would retry, and
+     * keeps this test suite from being flaky about exactly how long that reconnect takes.
+     */
     private RegisterDeviceResponse registerDevice(UUID userId, String pubKey) {
-        ResponseEntity<RegisterDeviceResponse> resp = rest.postForEntity(
-                "/admin/devices",
-                new HttpEntity<>(new RegisterDeviceRequest(userId, pubKey, "MQTT Test Device"), adminHeaders()),
-                RegisterDeviceResponse.class);
+        ResponseEntity<RegisterDeviceResponse> resp;
+        long deadline = System.currentTimeMillis() + 45_000;
+        while (true) {
+            resp = rest.postForEntity(
+                    "/admin/devices",
+                    new HttpEntity<>(new RegisterDeviceRequest(userId, pubKey, "MQTT Test Device"), adminHeaders()),
+                    RegisterDeviceResponse.class);
+            if (resp.getStatusCode() == HttpStatus.CREATED || System.currentTimeMillis() >= deadline) break;
+            try { Thread.sleep(200); } catch (InterruptedException ignored) { break; }
+        }
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         return resp.getBody();
     }
