@@ -82,6 +82,7 @@ jobs:
             cd ~/dompet
             docker compose -f docker-compose.prod.yml pull api worker
             docker compose -f docker-compose.prod.yml up -d
+            docker compose -f docker-compose.prod.yml restart mosquitto
             docker image prune -f
             sleep 15
             docker compose -f docker-compose.prod.yml exec api wget -qO- http://localhost:8080/actuator/health
