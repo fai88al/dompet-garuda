@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # FR17 — Update device status (ACTIVE / SUSPENDED / LOCKED).
 #
+# As of FR26, this also revokes (SUSPENDED/LOCKED) or reinstates (ACTIVE) the device's MQTT
+# access, best-effort — an MQTT/broker-side failure here never blocks or changes this
+# endpoint's 200 response (see docs/MQTT_CONTRACT.md).
+#
 # Prerequisites:
 #   - API running (./mvnw spring-boot:run -Dspring-boot.run.profiles=api)
 #   - ADMIN_TOKEN from script 13-admin-login.sh

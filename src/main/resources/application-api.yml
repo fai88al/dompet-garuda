@@ -24,3 +24,13 @@ cors:
 # Must be provided via ADMIN_JWT_SECRET env var. Never log this value (§7.9).
 admin:
   jwt-secret: ${ADMIN_JWT_SECRET}
+
+# MqttAdminClient (FR25/FR26, CLAUDE.md §15) — @Profile("api") only, fully separate from the
+# worker's Paho publisher bean. Connects as the dompet-api-admin account (admin role on the
+# Mosquitto Dynamic Security plugin) to provision/revoke/reinstate per-device MQTT credentials.
+# No hardcoded fallback for the password — a missing value fails startup (§7 invariant 12).
+mqtt:
+  broker-url: ${MQTT_BROKER_URL}
+  admin:
+    username: ${MQTT_API_ADMIN_USERNAME}
+    password: ${MQTT_API_ADMIN_PASSWORD}

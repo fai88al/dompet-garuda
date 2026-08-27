@@ -137,6 +137,9 @@ See `docs/api-examples/` for copy-pasteable `curl` examples of every endpoint.
 | `TRANSFER_ONLINE_MAX_AMOUNT_IDR` | Yes | — | Maximum Rupiah amount per online transfer (locked at 10,000,000 per R10) |
 | `QR_PAYMENT_REQUEST_TTL_MINUTES` | No | `10` | TTL in minutes for Bayar QR Online payment requests before they expire |
 | `CORS_ALLOWED_ORIGINS` | No | `http://localhost:3000` | Comma-separated browser origins allowed on `/admin/**` and `/device/**`; set to backoffice UI origin in production |
+| `MQTT_BROKER_URL` | Yes (api) | — | Broker URL for the api profile's `MqttAdminClient` (FR25/FR26), e.g. `ssl://mqtt.dompetgaruda.com:8883` |
+| `MQTT_API_ADMIN_USERNAME` | Yes (api) | — | `MqttAdminClient`'s Mosquitto Dynamic Security account, e.g. `dompet-api-admin` |
+| `MQTT_API_ADMIN_PASSWORD` | Yes (api) | — | Password for the account above; already provisioned on the VPS broker (see CLAUDE.md §15) |
 
 > **Port note (macOS):** the Docker Postgres runs on **5434** to avoid colliding with a Homebrew Postgres on the default 5432.
 
@@ -157,6 +160,7 @@ src/main/java/com/dompetgaruda/api/
   wallet/         # WalletController (top-up), PouchController (pouch load), DeviceBalanceController (balance)
   reconciliation/ # PR9: hourly pouch-vs-ledger reconciliation job (ShedLock-guarded)
   mqtt/           # MqttConfig (@Profile worker), MqttPublisherService — sync-result + cert-refresh (PR10)
+                  # MqttAdminClient (@Profile api) — per-device MQTT credential provisioning (PR19, FR25/FR26)
 
 src/main/resources/
   db/migration/          # Flyway migrations (V1__init.sql, …) — never edit applied files
@@ -210,6 +214,7 @@ docs/api-examples/       # curl scripts for every endpoint
 - [x] **PR16 — FR18/FR19 — Transfer Online Antar Pengguna** — `POST /device/transfer`: synchronous ONLINE_TRANSFER posting (DEBIT sender.online → CREDIT receiver.online), self-transfer rejected, configurable `transfer.online.max-amount-idr` (locked at Rp 10,000,000); device-generated `Idempotency-Key` enforced by a `UNIQUE` constraint on a new shared `idempotency_keys` table (also used by the upcoming Bayar QR Online PR) — duplicate keys replay the original response with zero re-posting; best-effort `wallet/{deviceId}/payment-received` MQTT hint
 - [x] **PR17 — FR20/FR21/FR22 — Bayar QR Online** — `POST /device/payment-request` (create, TTL-bound nonce + QR payload) and `POST /device/payment-request/{requestId}/pay` (synchronous QR_PAYMENT_ONLINE posting); reuses the exact `idempotency_keys` table and replay mechanism from PR16 (Transfer Online); nonce-reuse protection via request status (409 on already PAID/EXPIRED); real-time expiry check at pay time (410 + marks EXPIRED) backed by an independent `payment-request-expiry` ShedLock scheduled sweep (§14.2 belt-and-suspenders) every 1 minute
 - [x] **PR18 — FR23 — Bayar QR Offline (backend portion)** — reuses the existing offline BLE Transfer/settlement flow unchanged; adds an `origin` (`BLE`/`QR`) column to `offline_transactions`, populated from an optional field in the signed sync batch and defaulting to `BLE`; purely informational — never read by signature verification, counter/replay, or pouch-limit checks; QR payload spec for the firmware team at `docs/QR_OFFLINE_PAYLOAD_SPEC.md`; no new endpoint, no new payment_requests-style table (that pattern is Bayar QR Online-only)
+- [x] **PR19 — FR25/FR26 — MQTT per-device provisioning** — `MqttAdminClient` (`@Profile("api")`, fully separate connection from the worker's Paho publisher) drives Mosquitto's Dynamic Security control API; `POST /admin/devices` now provisions the device's MQTT credentials (username=deviceId, password=the same device token — no new secret) as a mandatory, transaction-rolling-back step (503 on failure); `PATCH /admin/devices/{deviceId}/status` revokes/reinstates MQTT access on SUSPENDED↔ACTIVE transitions, best-effort — never blocks the status change; Testcontainers tests against a real `eclipse-mosquitto:2` broker running the Dynamic Security plugin
 
 ---
 
