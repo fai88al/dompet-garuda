@@ -65,6 +65,19 @@ public abstract class ApiIntegrationTestBase {
     // shared broker every other test class relies on.
     protected static final GenericContainer<?> mosquitto = startMosquitto();
 
+    /**
+     * Escape hatch for {@code MqttProvisioningTest}: a subclass's OWN {@code @DynamicPropertySource}
+     * method is NOT reliably given precedence over this base class's (empirically, the base
+     * class's registration won during testing — Spring does not document a guaranteed override
+     * order across a @DynamicPropertySource method hierarchy). Rather than depend on that
+     * ordering, a subclass instead mutates these fields directly in a static initializer, which
+     * runs deterministically before Spring ever evaluates {@link #baseProps} (per JLS class-init
+     * order: this superclass finishes initializing before the subclass's own static block runs).
+     */
+    protected static GenericContainer<?> mqttContainerOverride;
+    protected static String mqttAdminUsernameOverride;
+    protected static String mqttAdminPasswordOverride;
+
     @SuppressWarnings("resource")
     private static PostgreSQLContainer<?> startPostgres() {
         PostgreSQLContainer<?> c = new PostgreSQLContainer<>("postgres:16")
@@ -97,9 +110,12 @@ public abstract class ApiIntegrationTestBase {
         registry.add("pouch.max-amount-idr",        () -> 3_000_000L);
         registry.add("transfer.online.max-amount-idr", () -> 10_000_000L);
         registry.add("admin.jwt-secret",            () -> TEST_JWT_SECRET);
-        registry.add("mqtt.broker-url",             () -> MosquittoTestSupport.brokerUrl(mosquitto));
-        registry.add("mqtt.admin.username",         () -> MQTT_ADMIN_USERNAME);
-        registry.add("mqtt.admin.password",         () -> MQTT_ADMIN_PASSWORD);
+        registry.add("mqtt.broker-url",
+                () -> MosquittoTestSupport.brokerUrl(mqttContainerOverride != null ? mqttContainerOverride : mosquitto));
+        registry.add("mqtt.admin.username",
+                () -> mqttAdminUsernameOverride != null ? mqttAdminUsernameOverride : MQTT_ADMIN_USERNAME);
+        registry.add("mqtt.admin.password",
+                () -> mqttAdminPasswordOverride != null ? mqttAdminPasswordOverride : MQTT_ADMIN_PASSWORD);
     }
 
     /**
