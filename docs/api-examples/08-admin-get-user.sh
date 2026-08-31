@@ -19,7 +19,7 @@ curl -s "http://localhost:8080/admin/users/${USER_ID}" \
 #   "createdAt": "2026-06-23T07:00:00Z",
 #   "devices": [
 #     {
-#       "deviceId": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+#       "deviceId": "B2C3D4E5F6A7",
 #       "status": "ACTIVE",
 #       "registeredAt": "2026-06-23T07:05:00Z"
 #     }

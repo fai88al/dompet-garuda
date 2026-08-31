@@ -18,7 +18,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Set;
-import java.util.UUID;
 
 /**
  * {@code @Profile("api")}: depends on {@link MqttAdminClient}, which is itself api-profile-only
@@ -90,7 +89,7 @@ public class AdminService {
      * JPA @PreUpdate on Device sets updatedAt automatically.
      */
     @Transactional
-    public UpdateDeviceStatusResponse updateDeviceStatus(UUID deviceId, UpdateDeviceStatusRequest req) {
+    public UpdateDeviceStatusResponse updateDeviceStatus(String deviceId, UpdateDeviceStatusRequest req) {
         if (!VALID_STATUSES.contains(req.status())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Invalid status: " + req.status() + ". Must be one of: ACTIVE, SUSPENDED, LOCKED");
@@ -113,12 +112,12 @@ public class AdminService {
      * status change. Swallows every exception and logs a WARNING instead: an emergency suspend of
      * a lost/stolen device must never be blocked by an unrelated MQTT/broker outage.
      */
-    public void syncMqttAccess(UUID deviceId, String newStatus) {
+    public void syncMqttAccess(String deviceId, String newStatus) {
         try {
             if ("ACTIVE".equals(newStatus)) {
-                mqttAdminClient.reinstateDevice(deviceId.toString());
+                mqttAdminClient.reinstateDevice(deviceId);
             } else {
-                mqttAdminClient.revokeDevice(deviceId.toString());
+                mqttAdminClient.revokeDevice(deviceId);
             }
         } catch (Exception e) {
             log.warn("MQTT access sync failed for device {} (new status {}): {}",
@@ -148,9 +147,19 @@ public class AdminService {
                     "A device with this public key is already registered");
         }
 
+        // FR27/§1a: deviceId is now hardware-sourced, not server-generated, so it is a
+        // client-supplied primary key. @Pattern on RegisterDeviceRequest already rejects
+        // '/' and '|' with 400 before this method runs; this existence check is the clean
+        // 409 for a reused id, ahead of the DB CHECK constraint / PK violation.
+        if (deviceRepository.existsById(req.deviceId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "A device with this deviceId is already registered: " + req.deviceId());
+        }
+
         DeviceTokenService.TokenPair tokenPair = deviceTokenService.generate();
 
         Device device = new Device();
+        device.setDeviceId(req.deviceId());
         device.setUserId(user.getUserId());
         device.setPublicKey(req.publicKey());
         device.setDeviceLabel(req.label());
@@ -160,7 +169,7 @@ public class AdminService {
         // Mandatory, not best-effort (CLAUDE.md §15 / FR25): a failure here throws
         // MqttProvisioningException (unchecked), which rolls back this entire transaction —
         // the device row above is never persisted. Caught at the controller and mapped to 503.
-        mqttAdminClient.provisionDevice(device.getDeviceId().toString(), tokenPair.token());
+        mqttAdminClient.provisionDevice(device.getDeviceId(), tokenPair.token());
 
         Account pouch = new Account();
         pouch.setUserId(user.getUserId());

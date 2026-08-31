@@ -35,7 +35,8 @@ class MqttGracefulDegradationTest extends WorkerIntegrationTestBase {
     @Autowired LedgerPostingService ledger;
     @Autowired ObjectMapper         objectMapper;
 
-    private UUID userId, deviceId, onlineAccountId, pouchAccountId;
+    private UUID userId, onlineAccountId, pouchAccountId;
+    private String deviceId;
 
     private static final long   ISSUED_AMOUNT = 50_000L;
     private static final String DUMMY_PUB_KEY =
@@ -109,25 +110,26 @@ class MqttGracefulDegradationTest extends WorkerIntegrationTestBase {
         return id;
     }
 
-    private UUID insertDevice(UUID uid) {
-        UUID id = UUID.randomUUID();
+    private String insertDevice(UUID uid) {
+        String id = com.dompetgaruda.api.DeviceIdTestSupport.randomDeviceId();
+        String pubKey = DUMMY_PUB_KEY + "-" + UUID.randomUUID();
         String tokHash = UUID.randomUUID().toString().replace("-", "")
                        + UUID.randomUUID().toString().replace("-", "");
         jdbc.update(
                 "INSERT INTO devices (device_id, user_id, public_key, device_label, device_token_hash) " +
                 "VALUES (?, ?, ?, 'MQTT Degrade Device', ?)",
-                id, uid, DUMMY_PUB_KEY, tokHash);
+                id, uid, pubKey, tokHash);
         return id;
     }
 
-    private UUID insertAccount(UUID uid, UUID devId, String type) {
+    private UUID insertAccount(UUID uid, String devId, String type) {
         UUID id = UUID.randomUUID();
         jdbc.update("INSERT INTO accounts (account_id, user_id, device_id, type) VALUES (?, ?, ?, ?)",
                 id, uid, devId, type);
         return id;
     }
 
-    private UUID insertCert(UUID devId, UUID pouchAccId, long amount, Instant expiresAt) {
+    private UUID insertCert(String devId, UUID pouchAccId, long amount, Instant expiresAt) {
         UUID id = UUID.randomUUID();
         jdbc.update(
                 "INSERT INTO offline_certificates " +
@@ -137,7 +139,7 @@ class MqttGracefulDegradationTest extends WorkerIntegrationTestBase {
         return id;
     }
 
-    private void insertBatch(UUID batchId, UUID devId, UUID certId,
+    private void insertBatch(UUID batchId, String devId, UUID certId,
                               List<com.dompetgaruda.api.sync.dto.SyncOfflineTxnRequest> txns)
             throws Exception {
         String json = objectMapper.writeValueAsString(new SyncBatchRequest(certId, txns));

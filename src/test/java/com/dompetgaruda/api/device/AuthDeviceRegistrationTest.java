@@ -1,6 +1,7 @@
 package com.dompetgaruda.api.device;
 
 import com.dompetgaruda.api.ApiIntegrationTestBase;
+import com.dompetgaruda.api.DeviceIdTestSupport;
 import com.dompetgaruda.api.common.repository.DeviceRepository;
 import com.dompetgaruda.api.device.dto.CreateUserRequest;
 import com.dompetgaruda.api.device.dto.CreateUserResponse;
@@ -9,11 +10,14 @@ import com.dompetgaruda.api.device.dto.RegisterDeviceResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.*;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Integration tests for admin auth and device registration (FR1).
@@ -27,6 +31,9 @@ class AuthDeviceRegistrationTest extends ApiIntegrationTestBase {
 
     @Autowired
     DeviceRepository deviceRepository;
+
+    @Autowired
+    JdbcTemplate jdbc;
 
     // -------------------------------------------------------------------------
     // Admin auth guard
@@ -89,12 +96,13 @@ class AuthDeviceRegistrationTest extends ApiIntegrationTestBase {
         UUID userId = createUser("+62812000001");
         String pubKey = "pk_" + UUID.randomUUID();
 
+        String deviceId = DeviceIdTestSupport.randomDeviceId();
         RegisterDeviceResponse resp = adminPost(
                 "/admin/devices",
-                new RegisterDeviceRequest(userId, pubKey, "Device A"),
+                new RegisterDeviceRequest(userId, deviceId, pubKey, "Device A"),
                 RegisterDeviceResponse.class);
 
-        assertThat(resp.deviceId()).isNotNull();
+        assertThat(resp.deviceId()).isEqualTo(deviceId);
         assertThat(resp.userId()).isEqualTo(userId);
         assertThat(resp.pouchAccountId()).isNotNull();
         assertThat(resp.deviceToken()).isNotBlank();
@@ -114,7 +122,7 @@ class AuthDeviceRegistrationTest extends ApiIntegrationTestBase {
 
         RegisterDeviceResponse resp = adminPost(
                 "/admin/devices",
-                new RegisterDeviceRequest(userId, pubKey, "Device B"),
+                new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), pubKey, "Device B"),
                 RegisterDeviceResponse.class);
 
         String returnedToken = resp.deviceToken();
@@ -136,14 +144,115 @@ class AuthDeviceRegistrationTest extends ApiIntegrationTestBase {
         String pubKey = "pk_shared_" + UUID.randomUUID();
 
         adminPost("/admin/devices",
-                new RegisterDeviceRequest(userId, pubKey, "Device C1"),
+                new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), pubKey, "Device C1"),
                 RegisterDeviceResponse.class);
 
         ResponseEntity<String> resp = rest.postForEntity(
                 "/admin/devices",
-                new HttpEntity<>(new RegisterDeviceRequest(userId, pubKey, "Device C2"), adminHeaders(testAdminJwt())),
+                new HttpEntity<>(new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), pubKey, "Device C2"), adminHeaders(testAdminJwt())),
                 String.class);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    // -------------------------------------------------------------------------
+    // Invariant: duplicate deviceId rejected (FR27 — deviceId is now a client-
+    // supplied primary key, so a reused id must be a clean 409, not a raw PK
+    // violation surfacing as 500)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void registerDevice_duplicateDeviceId_returns409() {
+        UUID userId1 = createUser("+62812000010");
+        UUID userId2 = createUser("+62812000011");
+        String deviceId = DeviceIdTestSupport.randomDeviceId();
+
+        adminPost("/admin/devices",
+                new RegisterDeviceRequest(userId1, deviceId, "pk_dupdev_1_" + UUID.randomUUID(), "Device D1"),
+                RegisterDeviceResponse.class);
+
+        ResponseEntity<String> resp = rest.postForEntity(
+                "/admin/devices",
+                new HttpEntity<>(new RegisterDeviceRequest(userId2, deviceId, "pk_dupdev_2_" + UUID.randomUUID(), "Device D2"),
+                        adminHeaders(testAdminJwt())),
+                String.class);
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    // -------------------------------------------------------------------------
+    // FR27/§1a: deviceId format validation — reject '/' and '|', accept a
+    // non-UUID-shaped string
+    // -------------------------------------------------------------------------
+
+    @Test
+    void registerDevice_deviceIdContainsSlash_returns400AndInsertsNoRow() {
+        UUID userId = createUser("+62812000020");
+        long countBefore = deviceRepository.count();
+
+        ResponseEntity<String> resp = rest.postForEntity(
+                "/admin/devices",
+                new HttpEntity<>(new RegisterDeviceRequest(userId, "AA/BB1122CC", "pk_" + UUID.randomUUID(), "Bad Device"),
+                        adminHeaders(testAdminJwt())),
+                String.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(deviceRepository.count())
+                .as("no device row should be inserted when deviceId contains '/'")
+                .isEqualTo(countBefore);
+    }
+
+    @Test
+    void registerDevice_deviceIdContainsPipe_returns400AndInsertsNoRow() {
+        UUID userId = createUser("+62812000021");
+        long countBefore = deviceRepository.count();
+
+        ResponseEntity<String> resp = rest.postForEntity(
+                "/admin/devices",
+                new HttpEntity<>(new RegisterDeviceRequest(userId, "AA|BB1122CC", "pk_" + UUID.randomUUID(), "Bad Device"),
+                        adminHeaders(testAdminJwt())),
+                String.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(deviceRepository.count())
+                .as("no device row should be inserted when deviceId contains '|'")
+                .isEqualTo(countBefore);
+    }
+
+    @Test
+    void registerDevice_nonUuidShapedDeviceId_returns201() {
+        UUID userId = createUser("+62812000022");
+        String deviceId = "A1B2C3D4E5F6"; // 12-char MAC-derived-style hex string, deliberately not UUID-shaped
+
+        RegisterDeviceResponse resp = adminPost(
+                "/admin/devices",
+                new RegisterDeviceRequest(userId, deviceId, "pk_" + UUID.randomUUID(), "MAC-style Device"),
+                RegisterDeviceResponse.class);
+
+        assertThat(resp.deviceId()).isEqualTo(deviceId);
+        assertThat(deviceRepository.findById(deviceId)).isPresent();
+    }
+
+    // -------------------------------------------------------------------------
+    // DB-level backstop: device_id_no_forbidden_chars CHECK constraint (§1a/FR27)
+    // Proves the DB layer independently rejects a forbidden character even if
+    // application-level validation were somehow bypassed — belt-and-suspenders
+    // alongside the 400s above, which go through the normal HTTP/validation path.
+    // -------------------------------------------------------------------------
+
+    @Test
+    void deviceIdCheckConstraint_rejectsDirectInsertWithForbiddenChar() {
+        UUID userId = createUser("+62812000030");
+
+        assertThatThrownBy(() -> jdbc.update(
+                "INSERT INTO devices (device_id, user_id, public_key, device_label, device_token_hash) " +
+                "VALUES (?, ?, ?, 'Constraint Test Device', ?)",
+                "BAD/DEVICE", userId, "pk_" + UUID.randomUUID(), "h" + UUID.randomUUID().toString().replace("-", "")))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        assertThatThrownBy(() -> jdbc.update(
+                "INSERT INTO devices (device_id, user_id, public_key, device_label, device_token_hash) " +
+                "VALUES (?, ?, ?, 'Constraint Test Device', ?)",
+                "BAD|DEVICE", userId, "pk_" + UUID.randomUUID(), "h" + UUID.randomUUID().toString().replace("-", "")))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     // -------------------------------------------------------------------------
@@ -156,13 +265,13 @@ class AuthDeviceRegistrationTest extends ApiIntegrationTestBase {
 
         for (int i = 1; i <= 3; i++) {
             adminPost("/admin/devices",
-                    new RegisterDeviceRequest(userId, "pk_user4_" + i, "Device " + i),
+                    new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), "pk_user4_" + i, "Device " + i),
                     RegisterDeviceResponse.class);
         }
 
         ResponseEntity<String> resp = rest.postForEntity(
                 "/admin/devices",
-                new HttpEntity<>(new RegisterDeviceRequest(userId, "pk_user4_4", "Device 4"), adminHeaders(testAdminJwt())),
+                new HttpEntity<>(new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), "pk_user4_4", "Device 4"), adminHeaders(testAdminJwt())),
                 String.class);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
     }

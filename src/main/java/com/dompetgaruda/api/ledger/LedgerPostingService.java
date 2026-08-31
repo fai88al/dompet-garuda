@@ -121,7 +121,7 @@ public class LedgerPostingService {
      * Resolves the POUCH ledger account for the given device.
      * Throws {@link org.springframework.dao.EmptyResultDataAccessException} if none found.
      */
-    public UUID resolvePouchAccount(UUID deviceId) {
+    public UUID resolvePouchAccount(String deviceId) {
         return jdbc.queryForObject(
                 "SELECT account_id FROM accounts WHERE device_id = ? AND type = 'POUCH'",
                 UUID.class,

@@ -1,5 +1,6 @@
 package com.dompetgaruda.api.sync;
 
+import com.dompetgaruda.api.DeviceIdTestSupport;
 import com.dompetgaruda.api.WorkerIntegrationTestBase;
 import com.dompetgaruda.api.ledger.LedgerEntry;
 import com.dompetgaruda.api.ledger.LedgerPostingService;
@@ -61,8 +62,9 @@ class SettlementTest extends WorkerIntegrationTestBase {
     @Autowired ObjectMapper          objectMapper;
 
     // IDs created in @BeforeEach, torn down in @AfterEach
-    private UUID senderUserId, senderDeviceId, senderOnlineAccountId, senderPouchAccountId;
-    private UUID receiverUserId, receiverDeviceId, receiverOnlineAccountId, receiverPouchAccountId;
+    private UUID senderUserId, senderOnlineAccountId, senderPouchAccountId;
+    private UUID receiverUserId, receiverOnlineAccountId, receiverPouchAccountId;
+    private String senderDeviceId, receiverDeviceId;
 
     private static final long ISSUED_AMOUNT = 100_000L;
     private static final long TRANSFER_AMOUNT = 50_000L;
@@ -636,8 +638,8 @@ class SettlementTest extends WorkerIntegrationTestBase {
         return id;
     }
 
-    private UUID insertDevice(UUID userId, String pubKeyBase64) {
-        UUID id        = UUID.randomUUID();
+    private String insertDevice(UUID userId, String pubKeyBase64) {
+        String id      = DeviceIdTestSupport.randomDeviceId();
         String tokHash = UUID.randomUUID().toString().replace("-", "")
                        + UUID.randomUUID().toString().replace("-", "");
         jdbc.update(
@@ -647,7 +649,7 @@ class SettlementTest extends WorkerIntegrationTestBase {
         return id;
     }
 
-    private UUID insertAccount(UUID userId, UUID deviceId, String type) {
+    private UUID insertAccount(UUID userId, String deviceId, String type) {
         UUID id = UUID.randomUUID();
         jdbc.update(
                 "INSERT INTO accounts (account_id, user_id, device_id, type) VALUES (?, ?, ?, ?)",
@@ -655,7 +657,7 @@ class SettlementTest extends WorkerIntegrationTestBase {
         return id;
     }
 
-    private UUID insertCert(UUID deviceId, UUID pouchAccountId, long issuedAmount, Instant expiresAt) {
+    private UUID insertCert(String deviceId, UUID pouchAccountId, long issuedAmount, Instant expiresAt) {
         UUID id = UUID.randomUUID();
         jdbc.update(
                 "INSERT INTO offline_certificates " +
@@ -666,7 +668,7 @@ class SettlementTest extends WorkerIntegrationTestBase {
         return id;
     }
 
-    private UUID insertExpiredCert(UUID deviceId, UUID pouchAccountId, long issuedAmount) {
+    private UUID insertExpiredCert(String deviceId, UUID pouchAccountId, long issuedAmount) {
         UUID id = UUID.randomUUID();
         jdbc.update(
                 "INSERT INTO offline_certificates " +
@@ -677,7 +679,7 @@ class SettlementTest extends WorkerIntegrationTestBase {
         return id;
     }
 
-    private void insertBatch(UUID batchId, UUID deviceId, UUID certId,
+    private void insertBatch(UUID batchId, String deviceId, UUID certId,
                               List<SyncOfflineTxnRequest> txns, boolean syncedAfterExpiry)
             throws Exception {
         String json = objectMapper.writeValueAsString(new SyncBatchRequest(certId, txns));
@@ -703,7 +705,7 @@ class SettlementTest extends WorkerIntegrationTestBase {
     }
 
     /** Mirrors SyncSettlementService.buildSigningMessage() exactly. */
-    private static String buildMsg(UUID offlineTxnId, UUID senderDeviceId, UUID receiverDeviceId,
+    private static String buildMsg(UUID offlineTxnId, String senderDeviceId, String receiverDeviceId,
                                     long amount, long counter, Instant deviceTimestamp) {
         return SyncSettlementService.buildSigningMessage(
                 new SyncOfflineTxnRequest(offlineTxnId, receiverDeviceId, amount, counter,
@@ -737,7 +739,7 @@ class SettlementTest extends WorkerIntegrationTestBase {
                 String.class, txnId);
     }
 
-    private long lastCounter(UUID deviceId) {
+    private long lastCounter(String deviceId) {
         Long v = jdbc.queryForObject(
                 "SELECT last_counter FROM devices WHERE device_id = ?", Long.class, deviceId);
         return v == null ? 0L : v;

@@ -7,8 +7,9 @@ import java.util.UUID;
 
 @Schema(description = "Registered device details. The deviceToken is shown exactly once — store it securely before discarding this response.")
 public record RegisterDeviceResponse(
-        @Schema(description = "Unique device identifier (UUID).")
-        UUID deviceId,
+        @Schema(description = "Unique device identifier — plain string, not a UUID (CLAUDE.md §1a).",
+                example = "A1B2C3D4E5F6")
+        String deviceId,
 
         @Schema(description = "UUID of the owning user.")
         UUID userId,

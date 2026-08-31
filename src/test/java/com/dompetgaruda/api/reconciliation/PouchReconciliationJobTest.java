@@ -40,12 +40,12 @@ class PouchReconciliationJobTest extends WorkerIntegrationTestBase {
 
     // Per-test identifiers, recreated in @BeforeEach
     private UUID senderUserId;
-    private UUID senderDeviceId;
+    private String senderDeviceId;
     private UUID senderOnlineAccountId;
     private UUID senderPouchAccountId;
 
     private UUID receiverUserId;
-    private UUID receiverDeviceId;
+    private String receiverDeviceId;
     private UUID receiverOnlineAccountId;
 
     // All certificate_ids created in a test — cleaned up in @AfterEach
@@ -263,11 +263,11 @@ class PouchReconciliationJobTest extends WorkerIntegrationTestBase {
     // DB setup helpers
     // -------------------------------------------------------------------------
 
-    private UUID insertActiveCert(long issuedAmount, UUID deviceId, UUID pouchAccountId) {
+    private UUID insertActiveCert(long issuedAmount, String deviceId, UUID pouchAccountId) {
         return insertCertWithStatus(issuedAmount, deviceId, pouchAccountId, "ACTIVE");
     }
 
-    private UUID insertCertWithStatus(long issuedAmount, UUID deviceId,
+    private UUID insertCertWithStatus(long issuedAmount, String deviceId,
                                        UUID pouchAccountId, String status) {
         UUID certId = UUID.randomUUID();
         jdbc.update(
@@ -289,9 +289,9 @@ class PouchReconciliationJobTest extends WorkerIntegrationTestBase {
         return userId;
     }
 
-    private UUID insertDevice(UUID userId, String label) {
-        UUID deviceId = UUID.randomUUID();
-        String pubKey = "recon-pk-" + deviceId.toString().replace("-", "").substring(0, 16);
+    private String insertDevice(UUID userId, String label) {
+        String deviceId = com.dompetgaruda.api.DeviceIdTestSupport.randomDeviceId();
+        String pubKey = "recon-pk-" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
         String tokenHash = UUID.randomUUID().toString().replace("-", "")
                          + UUID.randomUUID().toString().replace("-", "");
         jdbc.update(
@@ -309,7 +309,7 @@ class PouchReconciliationJobTest extends WorkerIntegrationTestBase {
         return accountId;
     }
 
-    private UUID insertPouchAccount(UUID userId, UUID deviceId) {
+    private UUID insertPouchAccount(UUID userId, String deviceId) {
         UUID accountId = UUID.randomUUID();
         jdbc.update(
                 "INSERT INTO accounts (account_id, user_id, device_id, type) VALUES (?, ?, ?, 'POUCH')",

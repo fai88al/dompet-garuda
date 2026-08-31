@@ -1,6 +1,7 @@
 package com.dompetgaruda.api.qrpayment;
 
 import com.dompetgaruda.api.ApiIntegrationTestBase;
+import com.dompetgaruda.api.DeviceIdTestSupport;
 import com.dompetgaruda.api.device.dto.CreateUserRequest;
 import com.dompetgaruda.api.device.dto.CreateUserResponse;
 import com.dompetgaruda.api.device.dto.RegisterDeviceRequest;
@@ -276,7 +277,7 @@ class PaymentRequestTest extends ApiIntegrationTestBase {
     }
 
     private RegisterDeviceResponse registerDevice(UUID userId, String publicKey) {
-        return adminPost("/admin/devices", new RegisterDeviceRequest(userId, publicKey, "Test Device"), RegisterDeviceResponse.class);
+        return adminPost("/admin/devices", new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), publicKey, "Test Device"), RegisterDeviceResponse.class);
     }
 
     private void topUp(UUID userId, long amount) {

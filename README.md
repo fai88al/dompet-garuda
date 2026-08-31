@@ -178,7 +178,7 @@ docs/api-examples/       # curl scripts for every endpoint
 | Table | Purpose |
 |-------|---------|
 | `users` | Account holders |
-| `devices` | ESP32 wallets bound to a user, with Ed25519 public key |
+| `devices` | ESP32 wallets bound to a user, with Ed25519 public key; `device_id` is a hardware-sourced `VARCHAR(128)` string (not a UUID — FR27) |
 | `accounts` | Ledger accounts: one `SYSTEM`, one `ONLINE` per user, one `POUCH` per device |
 | `ledger_transactions` | Journal entries grouping balanced postings |
 | `ledger_entries` | Immutable double-entry postings (append-only) |
@@ -215,6 +215,7 @@ docs/api-examples/       # curl scripts for every endpoint
 - [x] **PR17 — FR20/FR21/FR22 — Bayar QR Online** — `POST /device/payment-request` (create, TTL-bound nonce + QR payload) and `POST /device/payment-request/{requestId}/pay` (synchronous QR_PAYMENT_ONLINE posting); reuses the exact `idempotency_keys` table and replay mechanism from PR16 (Transfer Online); nonce-reuse protection via request status (409 on already PAID/EXPIRED); real-time expiry check at pay time (410 + marks EXPIRED) backed by an independent `payment-request-expiry` ShedLock scheduled sweep (§14.2 belt-and-suspenders) every 1 minute
 - [x] **PR18 — FR23 — Bayar QR Offline (backend portion)** — reuses the existing offline BLE Transfer/settlement flow unchanged; adds an `origin` (`BLE`/`QR`) column to `offline_transactions`, populated from an optional field in the signed sync batch and defaulting to `BLE`; purely informational — never read by signature verification, counter/replay, or pouch-limit checks; QR payload spec for the firmware team at `docs/QR_OFFLINE_PAYLOAD_SPEC.md`; no new endpoint, no new payment_requests-style table (that pattern is Bayar QR Online-only)
 - [x] **PR19 — FR25/FR26 — MQTT per-device provisioning** — `MqttAdminClient` (`@Profile("api")`, fully separate connection from the worker's Paho publisher) drives Mosquitto's Dynamic Security control API; `POST /admin/devices` now provisions the device's MQTT credentials (username=deviceId, password=the same device token — no new secret) as a mandatory, transaction-rolling-back step (503 on failure); `PATCH /admin/devices/{deviceId}/status` revokes/reinstates MQTT access on SUSPENDED↔ACTIVE transitions, best-effort — never blocks the status change; Testcontainers tests against a real `eclipse-mosquitto:2` broker running the Dynamic Security plugin
+- [x] **PR20 — FR27 — Device ID format migration (string, not UUID)** — `deviceId` is now a plain hardware-sourced string (e.g. MAC-derived), never a backend-generated UUID (CLAUDE.md §1a); Flyway migration (`V8__device_id_to_varchar.sql`) changes `devices.device_id` and every referencing foreign key (`accounts`, `offline_certificates`, `sync_inbox`, `offline_transactions.sender_device_id`/`receiver_device_id`, `idempotency_keys`) from `UUID` to `VARCHAR(128)`, plus a `device_id_no_forbidden_chars` CHECK constraint rejecting `/` or `|`; `POST /admin/devices` now takes `deviceId` as a required request field, validated (400) before insert, independent of the DB-level CHECK; full offline BLE regression, MQTT provisioning/connect, and all online endpoints verified end-to-end with a non-UUID-shaped device id
 
 ---
 

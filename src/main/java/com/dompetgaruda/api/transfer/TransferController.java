@@ -71,7 +71,7 @@ public class TransferController {
 
         if (outcome.newlyProcessed() && outcome.receiverDeviceId() != null && mqttPublisher != null) {
             mqttPublisher.publishPaymentReceived(
-                    outcome.receiverDeviceId().toString(), outcome.body().transactionId());
+                    outcome.receiverDeviceId(), outcome.body().transactionId());
         }
 
         return ResponseEntity.status(outcome.status()).body(outcome.body());

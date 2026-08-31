@@ -131,7 +131,7 @@ public class PouchService {
     // Ed25519 signing
     // -------------------------------------------------------------------------
 
-    private String sign(UUID certificateId, UUID deviceId, long issuedAmount, Instant expiresAt) {
+    private String sign(UUID certificateId, String deviceId, long issuedAmount, Instant expiresAt) {
         // Canonical message: fields joined by '|' — deterministic and human-readable.
         String message = certificateId + "|" + deviceId + "|" + issuedAmount + "|" + expiresAt.getEpochSecond();
         try {

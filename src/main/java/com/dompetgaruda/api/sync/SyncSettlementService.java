@@ -89,7 +89,7 @@ public class SyncSettlementService {
             return;
         }
 
-        UUID deviceId = (UUID) batchRow.get("device_id");
+        String deviceId = (String) batchRow.get("device_id");
         boolean syncedAfterExpiry = Boolean.TRUE.equals(batchRow.get("synced_after_expiry"));
         String rawJson = (String) batchRow.get("raw_payload");
 
@@ -105,7 +105,7 @@ public class SyncSettlementService {
             markFailed(batchId, "Malformed payload: " + e.getMessage());
             insertFlag(null, batchId, null, "MALFORMED", "JSON parse failed: " + e.getMessage());
             if (mqttPublisher != null) {
-                mqttPublisher.publishSyncResult(deviceId.toString(), batchId.toString(), "FAILED", "Malformed payload");
+                mqttPublisher.publishSyncResult(deviceId, batchId.toString(), "FAILED", "Malformed payload");
             }
             return;
         }
@@ -123,7 +123,7 @@ public class SyncSettlementService {
             insertFlag(null, batchId, batch.certificateId(), "MALFORMED",
                     "Certificate not found or already settled/revoked");
             if (mqttPublisher != null) {
-                mqttPublisher.publishSyncResult(deviceId.toString(), batchId.toString(), "FAILED", "No valid certificate");
+                mqttPublisher.publishSyncResult(deviceId, batchId.toString(), "FAILED", "No valid certificate");
             }
             return;
         }
@@ -175,7 +175,7 @@ public class SyncSettlementService {
 
         // Notify device of settlement outcome — fire-and-forget, must not throw (§7.8)
         if (mqttPublisher != null) {
-            mqttPublisher.publishSyncResult(deviceId.toString(), batchId.toString(), "SETTLED", null);
+            mqttPublisher.publishSyncResult(deviceId, batchId.toString(), "SETTLED", null);
         }
 
         // 6. Flag all settled transactions if batch arrived after expiry
@@ -197,7 +197,7 @@ public class SyncSettlementService {
      * @return {@code true} if the transaction was settled (OFFLINE_TRANSFER posted);
      *         {@code false} if it was flagged and skipped
      */
-    private boolean settleOneTxn(SyncOfflineTxnRequest txn, UUID senderDeviceId, UUID certId,
+    private boolean settleOneTxn(SyncOfflineTxnRequest txn, String senderDeviceId, UUID certId,
                                    UUID senderPouchAccountId, UUID batchId, long issuedAmount) {
         // Counter replay guard (§7.4)
         Long lastCounter = jdbc.queryForObject(
@@ -303,7 +303,7 @@ public class SyncSettlementService {
      * Format: {@code "{offlineTxnId}|{senderDeviceId}|{receiverDeviceId}|{amount}|{counter}|{deviceTimestamp}"}
      * where deviceTimestamp is Instant.toString() (ISO-8601 UTC).
      */
-    static String buildSigningMessage(SyncOfflineTxnRequest txn, UUID senderDeviceId) {
+    static String buildSigningMessage(SyncOfflineTxnRequest txn, String senderDeviceId) {
         String ts = txn.deviceTimestamp() != null ? txn.deviceTimestamp().toString() : "null";
         return txn.offlineTxnId() + "|" + senderDeviceId + "|" + txn.receiverDeviceId() + "|" +
                txn.amount() + "|" + txn.counter() + "|" + ts;
@@ -316,7 +316,7 @@ public class SyncSettlementService {
         return total == null ? 0L : total;
     }
 
-    private UUID resolveUserOnlineAccountForDevice(UUID deviceId) {
+    private UUID resolveUserOnlineAccountForDevice(String deviceId) {
         return jdbc.queryForObject(
                 "SELECT a.account_id FROM accounts a " +
                 "JOIN devices d ON a.user_id = d.user_id " +

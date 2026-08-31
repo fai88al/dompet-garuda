@@ -1,6 +1,7 @@
 package com.dompetgaruda.api.device;
 
 import com.dompetgaruda.api.ApiIntegrationTestBase;
+import com.dompetgaruda.api.DeviceIdTestSupport;
 import com.dompetgaruda.api.device.dto.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,7 +30,7 @@ class DeviceStatusTest extends ApiIntegrationTestBase {
     @Test
     void updateStatus_toSuspended_returns200() {
         UUID userId = createUser("+62832000001");
-        UUID deviceId = registerDevice(userId, "pk-status-001").deviceId();
+        String deviceId = registerDevice(userId, "pk-status-001").deviceId();
 
         ResponseEntity<UpdateDeviceStatusResponse> resp = patchStatus(deviceId, "SUSPENDED",
                 UpdateDeviceStatusResponse.class);
@@ -61,7 +62,7 @@ class DeviceStatusTest extends ApiIntegrationTestBase {
     @Test
     void updateStatus_invalidValue_returns400() {
         UUID userId = createUser("+62832000003");
-        UUID deviceId = registerDevice(userId, "pk-status-003").deviceId();
+        String deviceId = registerDevice(userId, "pk-status-003").deviceId();
 
         ResponseEntity<String> resp = patchStatus(deviceId, "INVALID_STATUS", String.class);
 
@@ -70,7 +71,7 @@ class DeviceStatusTest extends ApiIntegrationTestBase {
 
     @Test
     void updateStatus_unknownDevice_returns404() {
-        ResponseEntity<String> resp = patchStatus(UUID.randomUUID(), "SUSPENDED", String.class);
+        ResponseEntity<String> resp = patchStatus(UUID.randomUUID().toString(), "SUSPENDED", String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
@@ -91,13 +92,13 @@ class DeviceStatusTest extends ApiIntegrationTestBase {
     private RegisterDeviceResponse registerDevice(UUID userId, String pubKey) {
         ResponseEntity<RegisterDeviceResponse> resp = rest.postForEntity(
                 "/admin/devices",
-                new HttpEntity<>(new RegisterDeviceRequest(userId, pubKey, "Test Device"), adminHeaders()),
+                new HttpEntity<>(new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), pubKey, "Test Device"), adminHeaders()),
                 RegisterDeviceResponse.class);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         return resp.getBody();
     }
 
-    private <T> ResponseEntity<T> patchStatus(UUID deviceId, String status, Class<T> responseType) {
+    private <T> ResponseEntity<T> patchStatus(String deviceId, String status, Class<T> responseType) {
         return rest.exchange(
                 "/admin/devices/" + deviceId + "/status",
                 HttpMethod.PATCH,

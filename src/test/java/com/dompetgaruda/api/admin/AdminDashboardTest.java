@@ -1,6 +1,7 @@
 package com.dompetgaruda.api.admin;
 
 import com.dompetgaruda.api.ApiIntegrationTestBase;
+import com.dompetgaruda.api.DeviceIdTestSupport;
 import com.dompetgaruda.api.admin.dto.*;
 import com.dompetgaruda.api.device.dto.CreateUserRequest;
 import com.dompetgaruda.api.device.dto.CreateUserResponse;
@@ -255,7 +256,7 @@ class AdminDashboardTest extends ApiIntegrationTestBase {
 
     private RegisterDeviceResponse registerDevice(UUID userId, String publicKey) {
         return adminPost("/admin/devices",
-                new RegisterDeviceRequest(userId, publicKey, "Test Device"),
+                new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), publicKey, "Test Device"),
                 RegisterDeviceResponse.class);
     }
 
@@ -294,11 +295,11 @@ class AdminDashboardTest extends ApiIntegrationTestBase {
     // Helpers — direct DB setup
     // -------------------------------------------------------------------------
 
-    private UUID insertActiveCert(UUID deviceId, UUID pouchAccountId, long issuedAmount) {
+    private UUID insertActiveCert(String deviceId, UUID pouchAccountId, long issuedAmount) {
         return insertCertWithStatus(deviceId, pouchAccountId, issuedAmount, "ACTIVE");
     }
 
-    private UUID insertCertWithStatus(UUID deviceId, UUID pouchAccountId,
+    private UUID insertCertWithStatus(String deviceId, UUID pouchAccountId,
                                        long issuedAmount, String status) {
         UUID certId = UUID.randomUUID();
         jdbc.update(
@@ -311,7 +312,7 @@ class AdminDashboardTest extends ApiIntegrationTestBase {
         return certId;
     }
 
-    private UUID insertSyncInboxRow(UUID deviceId) {
+    private UUID insertSyncInboxRow(String deviceId) {
         UUID batchId = UUID.randomUUID();
         jdbc.update(
                 "INSERT INTO sync_inbox (batch_id, device_id, raw_payload, status) " +
