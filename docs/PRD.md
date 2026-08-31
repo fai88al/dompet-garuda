@@ -4,349 +4,241 @@
 |---|---|
 | **Project** | Dompet Digital — offline-capable IoT payment device |
 | **Initiator** | Faisal (via Fastwork) |
-| **Stage** | Prototype / proof-of-concept — Phase 2 delivered and verified |
+| **Stage** | Prototype / proof-of-concept |
 | **Doc owner** | Backend team |
-| **Status** | Phase 1 delivered. Phase 2 (online transactions & Bayar QR) delivered, deployed, and manually verified against production. MQTT per-device provisioning is in progress (infrastructure done, application PR pending). |
+| **Status** | Phase 1 & Phase 2 delivered and verified in production. Phase 2b (MQTT provisioning) delivered. Device ID format change locked, migration pending. Phase 3 (transaction history, analytics, notification reconciliation) — revision v1.1 received from Faisal, scope/price mismatch identified, renegotiation pending before work starts. |
 
 ---
 
 ## 1. Problem & premise
 
-Digital payments in Indonesia assume connectivity. Dompet Digital is a hardware wallet that
-lets two people transfer value device-to-device over Bluetooth with no internet, settling
-with the server later when connectivity returns.
-
-**Phase 2** extended the product to also support transactions when connectivity *is*
-available — direct online transfer, and QR-assisted payments both online and offline —
-without abandoning the offline-first capability that is the product's core differentiator.
-**All three Phase 2 features are now delivered.**
+Digital payments in Indonesia assume connectivity. Dompet Digital is a hardware wallet
+that lets two people transfer value device-to-device over Bluetooth with no internet,
+settling with the server later when connectivity returns.
 
 ---
 
 ## 2. Goals
 
-**Phase 1 (delivered):**
-- **G1.** Complete offline value transfer between two devices over BLE, correctly settled after reconnect.
-- **G2.** Prevent offline double-spending (offline-pouch model).
-- **G3.** Prove the backend architecture (API + worker, transactional inbox, double-entry ledger) end to end.
-- **G4.** Demonstrable on a single Hostinger KVM2 server.
+**Phase 1 (delivered):** G1–G4 — complete offline transfer, prevent double-spending,
+prove the API+worker+ledger architecture, run on a single Hostinger KVM2.
 
-**Phase 2 (delivered):**
-- **G5.** Enable direct online transfer between users without requiring BLE or a pouch. **Met.**
-- **G6.** Enable QR-assisted payments — both online (server-mediated) and offline
-  (BLE-mediated) — so users can pay by scanning instead of manual entry. **Met.**
-- **G7.** Preserve every money-safety invariant from Phase 1 across the new synchronous
-  online flows — no relaxed guarantees just because a flow is "simpler." **Met** — verified
-  by direct production testing (idempotency replay produces zero duplicate ledger rows;
-  self-transfer, over-limit, and expired-request rejections all confirmed).
+**Phase 2 (delivered):** G5–G7 — direct online transfer without BLE/pouch, QR-assisted
+payments online and offline, preserve every money-safety invariant across the new
+synchronous flows.
+
+**Phase 3 (proposed, under negotiation):** enable transaction history, analytics, and
+reliable (reconciled) notification delivery — see §10 for current status.
 
 ## 2a. Non-goals
 
 - **NG1.** Not production-grade security or compliance.
-- **NG2.** Not real money or a real payment network. Balances are prototype tokens in IDR.
+- **NG2.** Not real money — prototype tokens in IDR.
 - **NG3.** No multi-hop offline re-spend.
-- **NG4.** No consumer mobile app; admin/writer backoffice + landing page only.
+- **NG4.** No consumer mobile app.
 - **NG5.** No horizontal scaling or multi-region.
 - **NG6.** No KYC or dispute resolution.
-- **NG7.** Balance enquiry returns current figures only — no history or statements.
-- **NG8.** No further writer/article features beyond what's delivered (article CRUD, public read).
-- **NG9. "Bayar QR" is NOT QRIS.** No integration with Bank Indonesia's QRIS standard, no
-  bank or PJP (Penyedia Jasa Pembayaran) integration, no interoperability with external
-  e-wallets. QR codes are generated and scanned entirely within the Dompet Garuda ecosystem;
-  settlement happens in this system's own ledger only. This naming and scope boundary is
-  deliberate — see CLAUDE.md §1 and §12.
-- **NG10.** No hardware/firmware work in this document's costed scope, except the QR
-  payload specification handed to the firmware team (§4.5c) and the BLE protocol draft
-  (§9, R15). Camera integration, QR rendering on-device, BLE stack implementation, and
-  scanning UX are firmware responsibilities, separately scoped.
+- **NG7.** *(Historically: "balance enquiry returns current figures only, no history."
+  This is the exact constraint Phase 3's Transaction History feature proposes to
+  relax — see §10.)*
+- **NG8.** No further writer/article features beyond what's delivered.
+- **NG9. "Bayar QR" is NOT QRIS.** No Bank Indonesia / bank / PJP integration.
+- **NG10.** No hardware/firmware work in backend-costed scope, except specifications
+  handed to the firmware team (QR payload spec, BLE protocol draft, and now the device
+  ID format below).
 
 ---
 
 ## 3. Users
 
-- **Device holder.** Owns a Dompet device; checks balance; tops up; transacts offline; now
-  also transacts online and via Bayar QR.
-- **Admin.** Registers devices, tops up balances, manages users and flags via backoffice.
-- **Writer.** Manages articles via backoffice (unrelated to Phase 2, delivered previously).
+- **Device holder** — owns a device, checks balance, tops up, transacts offline,
+  online, and via Bayar QR.
+- **Admin** — registers devices, tops up balances, manages users/flags via backoffice.
+- **Writer** — manages articles via backoffice.
 
 ---
 
 ## 4. In-scope features
 
-### Phase 1 (delivered)
-- §4.1 Device registration & identity
-- §4.2 Online top-up (admin-initiated)
-- §4.2a Balance enquiry — "Cek Saldo"
-- §4.3 Offline pouch provisioning
-- §4.4 Offline transfer over BLE
-- §4.5 Offline QRIS-style request — **superseded by §4.5c below**; the cosmetic-only
-  version described in the original Phase 1 PRD is retired in favor of the real implementation.
-- §4.6 Sync & settlement
-- §4.7 Reconciliation job
-- §4.8 Admin read endpoints
-- Real per-user admin/writer authentication (JWT)
-- Article CRUD + public read endpoints
+Phase 1 and Phase 2 features are unchanged from prior revisions of this document —
+device registration, top-up, Cek Saldo, offline pouch, BLE transfer, sync/settlement,
+reconciliation, admin reads, real auth, articles, Transfer Online, Bayar QR Online,
+Bayar QR Offline. See the project's Obsidian knowledge base (`Phase 1 - Offline
+Foundation`, `Phase 2 - Online Transactions and Bayar QR`) for the full narrative if
+needed — this document focuses on what's new or changed.
 
-### Phase 2 — DELIVERED
+### 4.9 Device ID format (NEW, August 2026)
 
-#### 4.5a Transfer Online Antar Pengguna — DELIVERED
-- User sends money directly to another user's online balance via the server. No BLE, no
-  pouch, no certificate involved.
-- Idempotency-protected: retrying an ambiguous request never double-posts. **Verified**
-  against production by replaying an identical request with the same idempotency key and
-  confirming a single ledger posting.
-- Self-transfer is rejected. **Verified.**
-- Subject to a configurable maximum amount per transaction (default **Rp 10,000,000**,
-  see CLAUDE.md §14.5). **Verified** by submitting an over-limit amount and confirming
-  rejection.
+`deviceId` changes from a server-generated UUID v4 to a **plain string identifier
+sourced from the hardware/firmware team's own scheme** (expected to be derived from
+the device's factory-assigned MAC address, though the backend does not need to know or
+validate the semantic meaning of the string — only its format constraints).
 
-#### 4.5b Bayar QR Online — DELIVERED
-- Receiver generates a payment request (amount) on their device; the device renders it as
-  a QR code **locally, from a text payload the server provides** — the server never
-  generates an image.
-- Payer scans the QR with their device's camera, sees the amount, confirms with PIN.
-- Settlement is a direct server-mediated ledger posting — same integrity model as §4.5a,
-  initiated via the two-step request/pay flow.
-- Payment requests expire after a configurable TTL (default **10 minutes**) and can only be
-  paid once (nonce-protected against reuse). **Verified**: paying an already-paid request
-  returns 409; the scheduled expiry sweep (`PaymentRequestExpiryJob`) is confirmed running
-  every minute in production logs.
+**Locked constraints:**
+- Column type: `VARCHAR(128)`.
+- Must not contain `/` (breaks MQTT topic structure — `wallet/{deviceId}/#`) or `|`
+  (breaks the offline signature message delimiter format).
+- No other format assumption is made — the backend treats it as an opaque string,
+  unique per device, exactly as it treated the UUID before.
+- This changes **only** `deviceId`. `userId`, `certificateId`, `requestId`, and every
+  other identifier in the system remain UUID and are unaffected.
 
-#### 4.5c Bayar QR Offline — DELIVERED (backend portion)
-- Functionally, this is the **existing offline BLE Transfer flow (§4.4)** with a QR-based
-  shortcut for entering payment details. The receiver's device shows a QR; the payer scans
-  it with their camera; the two devices then complete the transfer over Bluetooth exactly as
-  in §4.4 — same mutual authentication, same Ed25519 signing, same settlement.
-- The backend's role was minimal: a QR payload specification for the firmware team, and an
-  `origin` field on `offline_transactions` for observability (BLE vs QR-initiated).
-  **Confirmed by code review**: `origin` never appears in any verification/trust branch —
-  only in the final insert statement, after all checks have passed.
-- This supersedes the placeholder "offline QRIS-style request" described in the original
-  Phase 1 PRD §4.5.
+This is a backend-side accommodation of a decision made by the hardware team, not a
+product feature — no user-facing behavior changes.
 
 ---
 
 ## 5. Out of scope
 
-Real QRIS/bank/PJP integration, consumer mobile app, hardware procurement, monthly
-infrastructure costs, third-party security audits, large-scale load testing — see NG1–NG10.
+Unchanged: real QRIS/bank/PJP integration, consumer mobile app, hardware procurement,
+third-party security audits, large-scale load testing.
 
 ---
 
 ## 6. Functional requirements
 
-> FR numbering continues from Phase 1. FR1–FR17 are Phase 1 (delivered). FR18 onward is Phase 2.
+> FR1–FR24 are Phase 1 and Phase 2 (delivered, unchanged — see prior revisions for full
+> text). FR25–FR26 are the MQTT provisioning feature (delivered). FR27 is new.
 
-### Phase 1 (delivered — kept for reference, do not renumber)
-- **FR1–FR14.** Device registration, top-up, pouch provisioning, offline transfer, sync
-  ingest, settlement, reconciliation, admin reads, balance enquiry.
-- **FR15.** Admin/writer login (JWT).
-- **FR16.** Resolve flagged transaction.
-- **FR17.** Update device status (ADMIN action).
-
-### Phase 2 — DELIVERED
-
-- **FR18.** `POST /device/transfer` creates a balanced `ONLINE_TRANSFER` ledger posting when:
-  device token valid, `Idempotency-Key` header present, receiver exists, receiver != sender,
-  amount > 0 and ≤ configured max, sender balance sufficient. Returns 200 with new sender
-  balance. Rejects self-transfer with 400, insufficient balance with 422, missing idempotency
-  key with 400. **Status: delivered, verified in production.**
-- **FR19.** A duplicate `Idempotency-Key` for the same device on `/device/transfer` returns
-  the original response without creating a second ledger posting (enforced by a `UNIQUE`
-  constraint on the `idempotency_keys` table). **Status: delivered, verified in production**
-  via direct row-count comparison before/after a replayed call.
-- **FR20.** `POST /device/payment-request` creates a `PENDING` payment request with a
-  unique nonce, a configurable expiry (default 10 minutes), and a QR-encodable text payload.
-  **Status: delivered, verified in production.**
-- **FR21.** `POST /device/payment-request/{id}/pay` settles a `PENDING`, non-expired
-  request as a balanced `QR_PAYMENT_ONLINE` posting, marks it `PAID`. Rejects: unknown
-  request (404), already-paid request (409), expired-at-check-time request (410, marks it
-  `EXPIRED`), self-payment (400), insufficient balance (422), missing idempotency key (400),
-  duplicate idempotency key (returns original result). **Status: delivered, verified in
-  production** — 404, 409, and the idempotency-replay guarantee were all directly tested
-  against the live API.
-- **FR22.** A scheduled job (`PaymentRequestExpiryJob`, ShedLock-guarded) marks `PENDING`
-  payment requests past their `expiresAt` as `EXPIRED` at least once per minute, independent
-  of the pay endpoint's own real-time expiry check. **Status: delivered** — confirmed
-  running on schedule in production logs. Real-time expiry-path testing (410 response,
-  actually letting a request lapse) has not yet been separately exercised against production
-  — only via CI tests. **Follow-up recommended.**
-- **FR23.** Offline transactions carry an `origin` field (`BLE` or `QR`), defaulting to
-  `BLE`. Settlement logic, signature verification, and counter/replay checks are identical
-  regardless of origin. **Status: delivered, confirmed by code review and CI test** (identical
-  ledger postings and identical over-limit flagging behavior for both origin values).
-- **FR24.** `transfer.online.max-amount-idr` and `qr-payment.request-ttl-minutes` are
-  required, environment-configurable properties with documented defaults (Rp 10,000,000
-  and 10 minutes respectively). No hardcoded fallback exists for the money-safety limit.
-  **Status: delivered, live on the VPS `.env`.**
-
-### Phase 2 — MQTT Provisioning (in progress)
-
-- **FR25.** `POST /admin/devices` provisions MQTT credentials for the new device
-  (username=deviceId, password=the same device token) as a mandatory part of registration.
-  Failure to provision rolls back the entire registration (503). **Status: delivered.**
-  `MqttAdminClient` (`@Profile("api")`) drives the Mosquitto Dynamic Security control API;
-  a provisioning failure throws and rolls back the whole registration transaction, mapped to
-  503 at the controller.
-- **FR26.** `PATCH /admin/devices/{deviceId}/status` revokes the device's MQTT access when
-  status changes to `SUSPENDED`/`LOCKED`, and restores it when status returns to `ACTIVE`.
-  A failure at this step must not block the status change itself. **Status: delivered.**
-  Runs strictly after the status row commits, wrapped in a try/catch that swallows every
-  exception and logs a WARNING — an MQTT/broker outage never blocks the status change.
+- **FR25.** `POST /admin/devices` provisions MQTT credentials atomically with device
+  registration; failure rolls back the whole registration (503). **Delivered, verified
+  end-to-end in production** (register → connect → suspend → rejected → reinstate →
+  connect again, all confirmed against the live broker).
+- **FR26.** `PATCH /admin/devices/{deviceId}/status` revokes/reinstates MQTT access on
+  suspend/reactivate, best-effort. **Delivered, verified in production.**
+- **FR27 (NEW).** `POST /admin/devices` rejects device registration with `400` if the
+  submitted `deviceId` contains `/` or `|`. The `devices.device_id` column and every
+  foreign key referencing it is `VARCHAR(128)`, not `UUID`. No endpoint, request shape,
+  or response shape changes as a result of this — only the underlying type and the new
+  validation rule.
 
 ---
 
 ## 7. Technical constraints
 
-- Hostinger KVM2: 2 vCPU, 8 GB RAM, Ubuntu 24.04.
-- Backend: Java 21 / Spring Boot 3.x / PostgreSQL 16 / Mosquitto / Caddy / Docker Compose.
-- Backoffice: Next.js 16 / Bun / shadcn/ui.
-- Landing page: Next.js 16, SEO-first, public article API.
-- ESP32 firmware: C/C++, BLE + Ed25519 on-device (firmware team, separately scoped —
-  Bayar QR camera/scan/render work included; BLE protocol itself still needs finalizing,
-  see §9 R15).
-- CI/CD: GitHub Actions → GHCR → VPS deploy via SSH on push to `main`, one pipeline per repo.
-- Online endpoints add no new infrastructure — they run in the existing `api` container,
-  synchronous, no new worker responsibilities except the payment-request expiry job.
-- **New:** Mosquitto now runs the Dynamic Security plugin rather than static
-  password/ACL files — see CLAUDE.md §15 for the full infrastructure detail (folder mount
-  requirements, ownership requirements, administrative command patterns).
+Unchanged infrastructure (Hostinger KVM2, Java 21/Spring Boot 3.x/PostgreSQL 16/
+Mosquitto/Caddy/Docker Compose, Next.js 16 backoffice/landing, GitHub Actions CI/CD).
+
+**New:** the device ID migration (FR27) requires a dedicated Flyway migration altering
+`devices.device_id` and every referencing foreign key from `UUID` to `VARCHAR(128)`.
+This must ship as its own PR, reviewed independently of any feature work, given how
+many tables reference this column.
 
 ---
 
 ## 8. Success criteria
 
-**Phase 1 (met):**
-1. Two devices complete an offline transfer with no internet; settles correctly after reconnect.
-2. Replayed batch creates no duplicate balance.
-3. Over-limit or tampered batch caught and flagged, not posted.
-4. Cek Saldo figures reconcile correctly across offline-spend-then-sync cycle.
-5. Full stack runs within 8 GB without swapping under demo load.
-6. Backup can be restored (tested at least once).
-7. Admin can complete the full workflow (create user, register device, top up, view flags)
-   from the backoffice UI alone.
+Phase 1 and Phase 2 criteria (met, verified in production — see prior revisions).
 
-**Phase 2 (met, with direct production evidence):**
-8. **Met.** A user can transfer online directly to another user, and the receiving user's
-   balance reflects it immediately, without any BLE or pouch involvement. Verified via
-   `POST /device/transfer` against the live API; sender/receiver balances checked before
-   and after.
-9. **Met.** A duplicate submission of the same online transfer never results in the money
-   moving twice. Verified by submitting the identical request with the same
-   `Idempotency-Key` twice against production and confirming: (a) identical response body
-   both times, (b) `SELECT COUNT(*) FROM ledger_transactions WHERE type = 'ONLINE_TRANSFER'`
-   returned `1`, not `2`.
-10. **Met.** A Bayar QR Online payment request that is paid once cannot be paid again.
-    Verified: a second payment attempt (with a fresh idempotency key) against an
-    already-`PAID` request returned 409 against production.
-11. **Partially met.** A Bayar QR Online payment request past its expiry is rejected (410)
-    — confirmed via CI test. Not yet independently re-verified against production by
-    letting a live request actually lapse past its TTL (only the "already paid" 409 path
-    and the scheduled-sweep log output were checked live). **Recommended before declaring
-    this fully closed.**
-12. **Met.** A Bayar QR Offline transaction settles through the identical verification path
-    as a manually-initiated BLE transfer. Confirmed via code review (origin never gates a
-    verification branch) and CI test (identical ledger postings, identical over-limit
-    flagging for both origin values).
+**New, for FR27:**
+13. A device registered with a non-UUID-shaped string `deviceId` (e.g., a 12-character
+    MAC-derived hex string) completes the full offline BLE transfer flow, MQTT
+    provisioning, and every online endpoint exactly as a UUID-shaped ID did before —
+    demonstrable by running the existing end-to-end offline transfer scenario with a
+    deliberately non-UUID device ID and confirming no step fails or behaves differently.
+14. Attempting to register a device with `deviceId` containing `/` or `|` is rejected
+    with `400`, not silently accepted and left to corrupt MQTT topics or signature
+    parsing downstream.
 
 ---
 
 ## 9. Decisions & risks
 
-### Phase 1 (resolved, kept for reference)
-- R1–R7, Q1–Q4, §9a/§9b as previously documented — unchanged, still in force. Max pouch
-  Rp 3,000,000, 24h certificate validity, no multi-hop offline re-spend, etc.
+Unchanged: R1–R17 (see prior revisions / the Obsidian `Key Decisions Log` note for the
+full table).
 
-### Phase 2 — resolved
-
-- **R8: Idempotency key ownership. DECIDED — device-generated.** The device generates the
-  `Idempotency-Key`, because only the device knows whether a given request is a genuine
-  retry of an ambiguous prior attempt or an intentionally new transaction.
-- **R9: Self-transfer. DECIDED — always rejected.** Both `/device/transfer` and paying
-  one's own `/device/payment-request` are rejected with 400.
-- **R10: Online transfer maximum amount. DECIDED — Rp 10,000,000, configurable.** A round,
-  generous ceiling bounding the damage of any single error, bug, or abuse case — online
-  transfers are always server-verified in real time, unlike the offline pouch limit (which
-  exists because a lost device is unrecoverable). **Must be revisited before any real-money
-  deployment** — no documented business rationale beyond "a safe round number."
-- **R11: Bayar QR Offline reuses the existing BLE trust model.** No new cryptographic
-  design was needed — the QR is purely a data-entry shortcut, confirmed explicitly with the
-  client to avoid the more complex alternative of encoding a fully signed transaction into
-  the QR itself.
-- **R12: Naming — "Bayar QR" not "QRIS".** Explicit client decision; QRIS is a registered
-  Bank Indonesia standard and using the name for a non-interoperable in-ecosystem feature
-  risks user confusion and regulatory scrutiny. See NG9.
-- **R13: MQTT device credentials. DECIDED — reuse the device token, mint no new secret.**
-  Username = deviceId, password = the existing device token. Avoids a second secret surface
-  to manage and protect.
-- **R14: MQTT provisioning failure handling. DECIDED — provisioning is mandatory at
-  registration (fails the whole registration on error); revoke/reinstate at suspend/lock is
-  best-effort (logs a warning, never blocks the status change).** Rationale: a silently
-  failed provisioning creates a device that can never be notified, permanently — a serious,
-  invisible defect. A failed revoke during an emergency suspend must not block a more
-  urgent security action (locking a lost or stolen device).
-
-### Phase 2 — newly identified, unresolved
-
-- **R15: BLE certificate-exchange protocol is undefined.** Surfaced while documenting the
-  offline transfer flow end-to-end. A draft GATT structure has been proposed to the
-  firmware team but not finalized. See CLAUDE.md §16.1.
-- **R16: Server public-key distribution to firmware has no rotation plan.** The server's
-  Ed25519 public key must be embedded in firmware at flash time for offline certificate
-  verification to work; rotating the corresponding private key later requires an OTA
-  update campaign across all fielded devices. Not an immediate blocker, but must be an
-  input to any future security incident-response or key-rotation plan. See CLAUDE.md §16.2.
-- **R17: The receiving device in an offline transfer gets no MQTT push notification** —
-  only the sender does. Not a correctness issue, but an inconsistency relative to the
-  `payment-received` pattern already built for the online flows. Not yet scoped as a fix.
-  See CLAUDE.md §16.4.
+- **R18 (NEW): Device ID format. DECIDED — plain string, `VARCHAR(128)`, sourced from
+  hardware team, no `/` or `|` allowed.** Driven by a hardware team decision to use
+  their own device-identity scheme (likely MAC-derived) rather than a
+  backend-generated UUID v4. The two character prohibitions are not arbitrary — they
+  are direct consequences of existing MQTT topic structure and the offline signature
+  message format, both already live in production. `VARCHAR(128)` was chosen as a
+  generous bound rather than the exact expected length, since tightening a column
+  later is trivial and getting a hard cap wrong upfront is not.
 
 ---
 
-## 10. Milestones
+## 10. Phase 3 — Status: Revision Received, Renegotiation Pending
+
+Faisal returned a revision (v1.1) of the original Phase 3 proposal (Transaction
+History, Analytics Dashboard, Notification Reconciliation). The three features
+themselves are unchanged in direction, but the revision adds requirements that
+**meaningfully expand scope without changing the proposed price** (still capped at
+Rp 8,800,000). Specifically:
+
+- Notification must include a **reconciliation mechanism** for devices offline at
+  settlement time, not just a one-shot MQTT publish (expands Feature A).
+- Transaction status must be a first-class, cross-system concept
+  (`SUCCESS`/`PENDING`/`FAILED`/`REVERSED`), consistent across ledger, API, backoffice,
+  and device (expands Feature B; `REVERSED` implies a reversal concept that doesn't
+  exist anywhere in the system today).
+- **Admin access to user transaction history must be audit-logged** — a new subsystem,
+  not present in the original estimate (expands Feature B).
+- Dashboard must add total Rupiah value, per-status counts, active user/device counts,
+  and 7-day/30-day trend lines (expands Feature C well past the original three metrics).
+- A **staging/UAT environment** must exist before production releases — infrastructure
+  that does not currently exist anywhere in this project (new, unbudgeted).
+- Formal acceptance criteria and test cases per feature, agreed before work starts.
+- IP ownership, milestone-based payment (5 milestones), and a 6-month bug warranty —
+  business/legal terms, not engineering scope, but material to the agreement.
+
+**This document intentionally does not yet reflect Phase 3 as locked scope** — per
+standing agreement, `CLAUDE.md`/`PRD.md` are updated only after a RAB is approved.
+Once the scope-vs-price question is resolved with Faisal (either by increasing the
+budget/hours to match the expanded requirements, or by explicitly deferring specific
+items — staging environment and full audit logging are the most likely candidates —
+to a later phase), this section will be replaced with the locked Phase 3 scope,
+mirroring how Phase 2 was documented once its RAB was approved.
+
+---
+
+## 11. Milestones
 
 ### Phase 1 — Complete
-All PRs (scaffold through admin read endpoints, real auth, articles, backoffice, landing
-page, infrastructure) merged, deployed, and verified in production as of Phase 1 close.
+All PRs merged, deployed, verified in production.
 
-### Phase 2 — Online Transactions & Bayar QR
+### Phase 2 — Online Transactions & Bayar QR — Complete
+All three features delivered, RAB paid, verified directly against production.
 
-| # | Task | Status |
-|---|------|--------|
-| 1 | RAB & Proposal drafted, reviewed | ✅ done |
-| 2 | RAB & Proposal approved by Faisal | ✅ done |
-| 3 | Invoice issued | ✅ done |
-| 4 | CLAUDE.md / PRD.md updated for Phase 2 scope | ✅ done |
-| 5 | Transfer Online (FR18, FR19) | ✅ **delivered, verified in production** |
-| 6 | Bayar QR Online (FR20–FR22) | ✅ **delivered, verified in production** |
-| 7 | Bayar QR Offline — backend portion (FR23) | ✅ **delivered, verified via code review + CI** |
-| 8 | Device simulator updated for new flows | pending |
-| 9 | End-to-end testing across all Phase 2 features | ✅ **done for the core happy/failure paths** (see §8); expiry-lapse path (item 11 above) still recommended |
-| 10 | Documentation updates (README, MQTT contract, API examples) | ✅ done — `docs/MQTT_CONTRACT.md` added, README milestones updated for FR25/FR26 |
-| 11 | Production deployment & verification | ✅ **done** for all three features |
-| 12 | Payment received (Bukti Pembayaran finalized) | ✅ done — payment cleared |
+### Phase 2b — MQTT Per-Device Provisioning — Complete
+Infrastructure migrated, `MqttAdminClient` delivered, full provision/revoke/reinstate
+cycle verified end-to-end in production.
 
-### Phase 2b — MQTT Per-Device Provisioning (new, in progress)
+### Immediate next — Device ID Format Migration (this revision)
 
 | # | Task | Status |
 |---|------|--------|
-| 1 | Identify the gap (no device MQTT credentials existed) | ✅ done |
-| 2 | Design decision: reuse device token, no new secret (R13) | ✅ done |
-| 3 | Migrate Mosquitto to Dynamic Security plugin on VPS | ✅ done, manually |
-| 4 | Create `admin`, `dompet-worker`, `dompet-api-admin` accounts + `worker-role`, `device-role` | ✅ done |
-| 5 | Verify worker survives a full broker restart on the new system | ✅ done |
-| 6 | `MqttAdminClient` bean + `POST /admin/devices` integration (FR25) | ✅ delivered |
-| 7 | `PATCH /admin/devices/{deviceId}/status` integration (FR26) | ✅ delivered |
-| 8 | Rotate all MQTT passwords to distinct, strong values | pending (tech debt, tracked in CLAUDE.md §15) |
+| 1 | Format decided with hardware team (string, no `/` or `|`) | ✅ done |
+| 2 | Column length locked at `VARCHAR(128)` | ✅ done |
+| 3 | `CLAUDE.md` / `PRD.md` updated | ✅ done (this revision) |
+| 4 | Flyway migration: `devices.device_id` + all FKs, `UUID` → `VARCHAR(128)` | ⬅ start here |
+| 5 | Registration validation: reject `/` or `\|` in `deviceId` (FR27) | pending |
+| 6 | Update `MqttAdminClient`, QR payload spec, BLE protocol draft for string IDs | pending |
+| 7 | Full regression: offline BLE flow, MQTT provisioning, all online endpoints, with a non-UUID test device ID | pending |
+| 8 | Deploy & verify in production | pending |
 
-### Known follow-up items (not yet scheduled)
+### Phase 3 — Transaction History, Analytics, Notification Reconciliation
 
-- BLE certificate-exchange GATT protocol finalization with firmware team (R15).
-- Server public-key rotation / OTA update plan (R16).
-- Receiving-device MQTT push notification for offline transfers (R17).
-- Device simulator update (Phase 2 item 8).
-- **`docker-compose.prod.yml`'s `api` service `environment:` block does not yet forward
-  `MQTT_BROKER_URL` / `MQTT_API_ADMIN_USERNAME` / `MQTT_API_ADMIN_PASSWORD` (CLAUDE.md §6's
-  recurring failure mode). The PR delivering FR25/FR26 (`MqttAdminClient`) deliberately did
-  NOT touch `docker-compose.prod.yml` per its stated scope — this must be added before the
-  next deploy that includes that PR, or the api container will crash-loop.
+| # | Task | Status |
+|---|------|--------|
+| 1 | Original proposal (v1.0) sent | ✅ done |
+| 2 | Revision (v1.1) received from Faisal | ✅ done |
+| 3 | Scope-vs-price mismatch identified and flagged | ✅ done (this revision) |
+| 4 | Renegotiate scope or budget with Faisal | blocking, not yet started |
+| 5 | RAB/proposal finalized and approved | pending |
+| 6 | `CLAUDE.md`/`PRD.md` updated for locked Phase 3 scope | pending (after step 5) |
+| 7 | Feature A — Notification + reconciliation | pending |
+| 8 | Feature B — Transaction history + status + audit log | pending |
+| 9 | Feature C — Analytics dashboard | pending |
+
+### Standing follow-up items (not yet scheduled, tracked for visibility)
+
+- Backup restore test — never actually executed, flagged since Phase 1's original
+  success criteria.
+- `PATCH /admin/auth/password` — password change endpoint, not yet built.
+- MQTT account passwords — all currently share one weak password, rotation pending.
+- BLE GATT protocol for certificate exchange — still a draft, not finalized with the
+  firmware team. **Now more time-sensitive**, since the hardware team is actively
+  making device-identity decisions and should receive the finalized GATT spec in the
+  same working conversation as this device ID change.
+- Server public key embedding + rotation plan for firmware.
