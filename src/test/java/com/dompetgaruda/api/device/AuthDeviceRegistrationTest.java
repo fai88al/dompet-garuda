@@ -2,6 +2,7 @@ package com.dompetgaruda.api.device;
 
 import com.dompetgaruda.api.ApiIntegrationTestBase;
 import com.dompetgaruda.api.DeviceIdTestSupport;
+import com.dompetgaruda.api.Ed25519TestSupport;
 import com.dompetgaruda.api.common.repository.DeviceRepository;
 import com.dompetgaruda.api.device.dto.CreateUserRequest;
 import com.dompetgaruda.api.device.dto.CreateUserResponse;
@@ -14,6 +15,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.util.Base64;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -94,7 +96,7 @@ class AuthDeviceRegistrationTest extends ApiIntegrationTestBase {
     @Test
     void registerDevice_happyPath_returnsTokenOnce() {
         UUID userId = createUser("+62812000001");
-        String pubKey = "pk_" + UUID.randomUUID();
+        String pubKey = Ed25519TestSupport.randomValidPublicKeyBase64();
 
         String deviceId = DeviceIdTestSupport.randomDeviceId();
         RegisterDeviceResponse resp = adminPost(
@@ -118,7 +120,7 @@ class AuthDeviceRegistrationTest extends ApiIntegrationTestBase {
     @Test
     void registerDevice_storedHashIsNotPlaintext() {
         UUID userId = createUser("+62812000002");
-        String pubKey = "pk_" + UUID.randomUUID();
+        String pubKey = Ed25519TestSupport.randomValidPublicKeyBase64();
 
         RegisterDeviceResponse resp = adminPost(
                 "/admin/devices",
@@ -141,7 +143,7 @@ class AuthDeviceRegistrationTest extends ApiIntegrationTestBase {
     @Test
     void registerDevice_duplicatePublicKey_returns409() {
         UUID userId = createUser("+62812000003");
-        String pubKey = "pk_shared_" + UUID.randomUUID();
+        String pubKey = Ed25519TestSupport.randomValidPublicKeyBase64();
 
         adminPost("/admin/devices",
                 new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), pubKey, "Device C1"),
@@ -167,12 +169,12 @@ class AuthDeviceRegistrationTest extends ApiIntegrationTestBase {
         String deviceId = DeviceIdTestSupport.randomDeviceId();
 
         adminPost("/admin/devices",
-                new RegisterDeviceRequest(userId1, deviceId, "pk_dupdev_1_" + UUID.randomUUID(), "Device D1"),
+                new RegisterDeviceRequest(userId1, deviceId, Ed25519TestSupport.randomValidPublicKeyBase64(), "Device D1"),
                 RegisterDeviceResponse.class);
 
         ResponseEntity<String> resp = rest.postForEntity(
                 "/admin/devices",
-                new HttpEntity<>(new RegisterDeviceRequest(userId2, deviceId, "pk_dupdev_2_" + UUID.randomUUID(), "Device D2"),
+                new HttpEntity<>(new RegisterDeviceRequest(userId2, deviceId, Ed25519TestSupport.randomValidPublicKeyBase64(), "Device D2"),
                         adminHeaders(testAdminJwt())),
                 String.class);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
@@ -190,7 +192,7 @@ class AuthDeviceRegistrationTest extends ApiIntegrationTestBase {
 
         ResponseEntity<String> resp = rest.postForEntity(
                 "/admin/devices",
-                new HttpEntity<>(new RegisterDeviceRequest(userId, "AA/BB1122CC", "pk_" + UUID.randomUUID(), "Bad Device"),
+                new HttpEntity<>(new RegisterDeviceRequest(userId, "AA/BB1122CC", Ed25519TestSupport.randomValidPublicKeyBase64(), "Bad Device"),
                         adminHeaders(testAdminJwt())),
                 String.class);
 
@@ -207,7 +209,7 @@ class AuthDeviceRegistrationTest extends ApiIntegrationTestBase {
 
         ResponseEntity<String> resp = rest.postForEntity(
                 "/admin/devices",
-                new HttpEntity<>(new RegisterDeviceRequest(userId, "AA|BB1122CC", "pk_" + UUID.randomUUID(), "Bad Device"),
+                new HttpEntity<>(new RegisterDeviceRequest(userId, "AA|BB1122CC", Ed25519TestSupport.randomValidPublicKeyBase64(), "Bad Device"),
                         adminHeaders(testAdminJwt())),
                 String.class);
 
@@ -224,7 +226,66 @@ class AuthDeviceRegistrationTest extends ApiIntegrationTestBase {
 
         RegisterDeviceResponse resp = adminPost(
                 "/admin/devices",
-                new RegisterDeviceRequest(userId, deviceId, "pk_" + UUID.randomUUID(), "MAC-style Device"),
+                new RegisterDeviceRequest(userId, deviceId, Ed25519TestSupport.randomValidPublicKeyBase64(), "MAC-style Device"),
+                RegisterDeviceResponse.class);
+
+        assertThat(resp.deviceId()).isEqualTo(deviceId);
+        assertThat(deviceRepository.findById(deviceId)).isPresent();
+    }
+
+    // -------------------------------------------------------------------------
+    // publicKey format validation: must be Base64 decoding to exactly 32 bytes
+    // (raw Ed25519 public key length)
+    // -------------------------------------------------------------------------
+
+    @Test
+    void registerDevice_publicKeyNotValidBase64_returns400AndInsertsNoRow() {
+        UUID userId = createUser("+62812000040");
+        long countBefore = deviceRepository.count();
+
+        ResponseEntity<String> resp = rest.postForEntity(
+                "/admin/devices",
+                new HttpEntity<>(new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(),
+                        "not-valid-base64!!!", "Bad Key Device"),
+                        adminHeaders(testAdminJwt())),
+                String.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(deviceRepository.count())
+                .as("no device row should be inserted when publicKey is not valid Base64")
+                .isEqualTo(countBefore);
+    }
+
+    @Test
+    void registerDevice_publicKeyValidBase64ButWrongByteLength_returns400AndInsertsNoRow() {
+        UUID userId = createUser("+62812000041");
+        long countBefore = deviceRepository.count();
+
+        // Valid Base64, but 16 bytes — too short to be a well-formed X.509 Ed25519 key.
+        String wrongLengthKey = Base64.getEncoder().encodeToString(new byte[16]);
+
+        ResponseEntity<String> resp = rest.postForEntity(
+                "/admin/devices",
+                new HttpEntity<>(new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(),
+                        wrongLengthKey, "Bad Key Device"),
+                        adminHeaders(testAdminJwt())),
+                String.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(deviceRepository.count())
+                .as("no device row should be inserted when publicKey has the wrong byte length")
+                .isEqualTo(countBefore);
+    }
+
+    @Test
+    void registerDevice_realEd25519PublicKey_returns201() {
+        UUID userId = createUser("+62812000042");
+        String deviceId = DeviceIdTestSupport.randomDeviceId();
+        String realPublicKey = Ed25519TestSupport.realEd25519PublicKeyBase64();
+
+        RegisterDeviceResponse resp = adminPost(
+                "/admin/devices",
+                new RegisterDeviceRequest(userId, deviceId, realPublicKey, "Real Key Device"),
                 RegisterDeviceResponse.class);
 
         assertThat(resp.deviceId()).isEqualTo(deviceId);
@@ -265,13 +326,13 @@ class AuthDeviceRegistrationTest extends ApiIntegrationTestBase {
 
         for (int i = 1; i <= 3; i++) {
             adminPost("/admin/devices",
-                    new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), "pk_user4_" + i, "Device " + i),
+                    new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), Ed25519TestSupport.randomValidPublicKeyBase64(), "Device " + i),
                     RegisterDeviceResponse.class);
         }
 
         ResponseEntity<String> resp = rest.postForEntity(
                 "/admin/devices",
-                new HttpEntity<>(new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), "pk_user4_4", "Device 4"), adminHeaders(testAdminJwt())),
+                new HttpEntity<>(new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), Ed25519TestSupport.randomValidPublicKeyBase64(), "Device 4"), adminHeaders(testAdminJwt())),
                 String.class);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
     }

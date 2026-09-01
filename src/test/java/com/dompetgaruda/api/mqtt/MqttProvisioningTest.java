@@ -2,6 +2,7 @@ package com.dompetgaruda.api.mqtt;
 
 import com.dompetgaruda.api.ApiIntegrationTestBase;
 import com.dompetgaruda.api.DeviceIdTestSupport;
+import com.dompetgaruda.api.Ed25519TestSupport;
 import com.dompetgaruda.api.common.repository.DeviceRepository;
 import com.dompetgaruda.api.device.dto.CreateUserRequest;
 import com.dompetgaruda.api.device.dto.CreateUserResponse;
@@ -115,7 +116,7 @@ class MqttProvisioningTest extends ApiIntegrationTestBase {
         try {
             ResponseEntity<String> resp = rest.postForEntity(
                     "/admin/devices",
-                    new HttpEntity<>(new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), "pk-mqtt-002", "Outage Device"), adminHeaders()),
+                    new HttpEntity<>(new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), Ed25519TestSupport.derivePublicKeyBase64("pk-mqtt-002"), "Outage Device"), adminHeaders()),
                     String.class);
 
             assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
@@ -213,7 +214,7 @@ class MqttProvisioningTest extends ApiIntegrationTestBase {
         while (true) {
             resp = rest.postForEntity(
                     "/admin/devices",
-                    new HttpEntity<>(new RegisterDeviceRequest(userId, deviceId, pubKey, "MQTT Test Device"), adminHeaders()),
+                    new HttpEntity<>(new RegisterDeviceRequest(userId, deviceId, Ed25519TestSupport.derivePublicKeyBase64(pubKey), "MQTT Test Device"), adminHeaders()),
                     RegisterDeviceResponse.class);
             if (resp.getStatusCode() == HttpStatus.CREATED || System.currentTimeMillis() >= deadline) break;
             try { Thread.sleep(200); } catch (InterruptedException ignored) { break; }

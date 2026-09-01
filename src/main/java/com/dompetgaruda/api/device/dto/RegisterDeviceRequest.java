@@ -24,8 +24,9 @@ public record RegisterDeviceRequest(
         @Pattern(regexp = "^[^/|]+$", message = "deviceId must not contain '/' or '|'")
         String deviceId,
 
-        @Schema(description = "Base64-encoded Ed25519 public key from the device firmware. Used to verify offline transaction signatures.", example = "MCowBQYDK2VwAyEA...")
+        @Schema(description = "Base64-encoded Ed25519 public key (X.509 SubjectPublicKeyInfo DER) from the device firmware. Used to verify offline transaction signatures.", example = "MCowBQYDK2VwAyEA47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=")
         @NotBlank
+        @ValidEd25519PublicKey
         String publicKey,
 
         @Schema(description = "Human-readable label for the device (optional, max 60 chars).", example = "Device 1", maxLength = 60)

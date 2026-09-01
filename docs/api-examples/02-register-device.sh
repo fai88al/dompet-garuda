@@ -33,7 +33,8 @@ curl -s -X POST http://localhost:8080/admin/devices \
 # }
 #
 # Error cases:
-#   400 — missing/invalid field, or deviceId contains '/' or '|' (FR27)
+#   400 — missing/invalid field, deviceId contains '/' or '|' (FR27), or publicKey is not
+#         valid Base64 / does not decode to a well-formed X.509 Ed25519 public key
 #   401 — wrong or missing Authorization header
 #   404 — userId not found
 #   409 — publicKey or deviceId already registered to another device

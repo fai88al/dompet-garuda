@@ -2,6 +2,7 @@ package com.dompetgaruda.api.admin;
 
 import com.dompetgaruda.api.ApiIntegrationTestBase;
 import com.dompetgaruda.api.DeviceIdTestSupport;
+import com.dompetgaruda.api.Ed25519TestSupport;
 import com.dompetgaruda.api.admin.dto.*;
 import com.dompetgaruda.api.device.dto.CreateUserRequest;
 import com.dompetgaruda.api.device.dto.CreateUserResponse;
@@ -256,7 +257,7 @@ class AdminDashboardTest extends ApiIntegrationTestBase {
 
     private RegisterDeviceResponse registerDevice(UUID userId, String publicKey) {
         return adminPost("/admin/devices",
-                new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), publicKey, "Test Device"),
+                new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), Ed25519TestSupport.derivePublicKeyBase64(publicKey), "Test Device"),
                 RegisterDeviceResponse.class);
     }
 
