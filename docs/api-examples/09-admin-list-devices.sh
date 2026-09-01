@@ -9,7 +9,7 @@ curl -s http://localhost:8080/admin/devices \
 # Expected response — HTTP 200 OK:
 # [
 #   {
-#     "deviceId": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+#     "deviceId": "B2C3D4E5F6A7",
 #     "userId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
 #     "userPhone": "+6282220463884",
 #     "status": "ACTIVE",
@@ -23,7 +23,7 @@ curl -s http://localhost:8080/admin/devices \
 #     }
 #   },
 #   {
-#     "deviceId": "d4e5f6a7-b8c9-0123-def0-234567890123",
+#     "deviceId": "D4E5F6A7B8C9",
 #     "userId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
 #     "userPhone": "+6282220463884",
 #     "status": "ACTIVE",

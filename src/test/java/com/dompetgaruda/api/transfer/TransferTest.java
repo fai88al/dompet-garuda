@@ -1,6 +1,7 @@
 package com.dompetgaruda.api.transfer;
 
 import com.dompetgaruda.api.ApiIntegrationTestBase;
+import com.dompetgaruda.api.DeviceIdTestSupport;
 import com.dompetgaruda.api.device.dto.CreateUserRequest;
 import com.dompetgaruda.api.device.dto.CreateUserResponse;
 import com.dompetgaruda.api.device.dto.RegisterDeviceRequest;
@@ -298,7 +299,7 @@ class TransferTest extends ApiIntegrationTestBase {
 
     private RegisterDeviceResponse registerDevice(UUID userId, String publicKey) {
         return adminPost("/admin/devices",
-                new RegisterDeviceRequest(userId, publicKey, "Test Device"),
+                new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), publicKey, "Test Device"),
                 RegisterDeviceResponse.class);
     }
 
@@ -342,7 +343,7 @@ class TransferTest extends ApiIntegrationTestBase {
         return count == null ? 0L : count;
     }
 
-    private long countIdempotencyKeysForDevice(UUID deviceId) {
+    private long countIdempotencyKeysForDevice(String deviceId) {
         Long count = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM idempotency_keys WHERE device_id = ?", Long.class, deviceId);
         return count == null ? 0L : count;

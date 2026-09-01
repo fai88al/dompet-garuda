@@ -16,7 +16,7 @@ curl -s "http://localhost:8080/admin/certificates" \
 # [
 #   {
 #     "certificateId": "c3d4e5f6-a7b8-9012-cdef-123456789012",
-#     "deviceId": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+#     "deviceId": "B2C3D4E5F6A7",
 #     "userPhone": "+6282220463884",
 #     "issuedAmount": 200000,
 #     "status": "ACTIVE",

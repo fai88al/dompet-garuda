@@ -144,7 +144,7 @@ public class PaymentRequestService {
         PayPaymentRequestResponse response = new PayPaymentRequestResponse(transactionId, payerBalance - amount);
         storeIdempotencyKey(payer.getDeviceId(), idempotencyKey, transactionId, response);
 
-        UUID receiverDeviceId = findReceiverDeviceId(receiverUserId).orElse(null);
+        String receiverDeviceId = findReceiverDeviceId(receiverUserId).orElse(null);
         return new PayOutcome(200, response, receiverDeviceId, true);
     }
 
@@ -161,7 +161,7 @@ public class PaymentRequestService {
         return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
     }
 
-    private Optional<PayPaymentRequestResponse> findReplay(UUID deviceId, UUID idempotencyKey) {
+    private Optional<PayPaymentRequestResponse> findReplay(String deviceId, UUID idempotencyKey) {
         List<String> bodies = jdbc.query(
                 "SELECT response_body::text FROM idempotency_keys WHERE device_id = ? AND idempotency_key = ?",
                 (rs, rowNum) -> rs.getString(1),
@@ -172,7 +172,7 @@ public class PaymentRequestService {
         return Optional.of(readResponse(bodies.get(0)));
     }
 
-    private void storeIdempotencyKey(UUID deviceId, UUID idempotencyKey, long transactionId, PayPaymentRequestResponse response) {
+    private void storeIdempotencyKey(String deviceId, UUID idempotencyKey, long transactionId, PayPaymentRequestResponse response) {
         String json = writeResponse(response);
         try {
             jdbc.update(
@@ -187,12 +187,12 @@ public class PaymentRequestService {
         }
     }
 
-    private Optional<UUID> findReceiverDeviceId(UUID receiverUserId) {
+    private Optional<String> findReceiverDeviceId(UUID receiverUserId) {
         try {
-            UUID deviceId = jdbc.queryForObject(
+            String deviceId = jdbc.queryForObject(
                     "SELECT device_id FROM devices WHERE user_id = ? AND status = 'ACTIVE' " +
                     "ORDER BY registered_at LIMIT 1",
-                    UUID.class,
+                    String.class,
                     receiverUserId);
             return Optional.ofNullable(deviceId);
         } catch (EmptyResultDataAccessException e) {

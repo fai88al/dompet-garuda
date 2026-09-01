@@ -25,7 +25,7 @@ curl -s -X PATCH "${BASE_URL}/admin/devices/${DEVICE_ID}/status" \
 
 # Expected response (200 OK):
 # {
-#   "deviceId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+#   "deviceId": "A1B2C3D4E5F6",
 #   "status": "SUSPENDED",
 #   "updatedAt": "2026-07-13T10:05:00Z"
 # }

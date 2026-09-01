@@ -43,7 +43,7 @@ class SyncInboxPollerTest extends WorkerIntegrationTestBase {
 
     @Test
     void processOneRow_malformedBatch_setsStatusFailed() {
-        UUID deviceId = insertDevice();
+        String deviceId = insertDevice();
         UUID batchId  = insertPendingBatch(deviceId);
 
         boolean found = poller.processOneRow();
@@ -75,7 +75,7 @@ class SyncInboxPollerTest extends WorkerIntegrationTestBase {
 
     @Test
     void processOneRow_multiplePendingRows_returnsTrueEachTime() {
-        UUID deviceId = insertDevice();
+        String deviceId = insertDevice();
         UUID batchId1 = insertPendingBatch(deviceId);
         UUID batchId2 = insertPendingBatch(deviceId);
 
@@ -113,7 +113,7 @@ class SyncInboxPollerTest extends WorkerIntegrationTestBase {
 
     @Test
     void processOneRow_malformedBatch_zeroLedgerWrites() {
-        UUID deviceId = insertDevice();
+        String deviceId = insertDevice();
         UUID batchId  = insertPendingBatch(deviceId);
 
         long entriesBefore = countRows("ledger_entries");
@@ -135,13 +135,13 @@ class SyncInboxPollerTest extends WorkerIntegrationTestBase {
     // Setup helpers
     // -------------------------------------------------------------------------
 
-    private UUID insertDevice() {
+    private String insertDevice() {
         UUID userId   = UUID.randomUUID();
-        UUID deviceId = UUID.randomUUID();
+        String deviceId = com.dompetgaruda.api.DeviceIdTestSupport.randomDeviceId();
         // Unique phone so multiple insertDevice() calls don't collide on the UNIQUE constraint.
         String phone = "+62900" + System.nanoTime() % 100_000_000L;
         // public_key is UNIQUE (V2 migration); generate a distinct value per device.
-        String publicKey = "pk-worker-" + deviceId.toString().substring(0, 8);
+        String publicKey = "pk-worker-" + UUID.randomUUID();
         // device_token_hash is VARCHAR(64) NOT NULL UNIQUE (V2 migration).
         String tokenHash = UUID.randomUUID().toString().replace("-", "")
                          + UUID.randomUUID().toString().replace("-", "");
@@ -155,7 +155,7 @@ class SyncInboxPollerTest extends WorkerIntegrationTestBase {
         return deviceId;
     }
 
-    private UUID insertPendingBatch(UUID deviceId) {
+    private UUID insertPendingBatch(String deviceId) {
         UUID batchId = UUID.randomUUID();
         jdbc.update(
                 "INSERT INTO sync_inbox (batch_id, device_id, raw_payload, status) " +
@@ -165,7 +165,7 @@ class SyncInboxPollerTest extends WorkerIntegrationTestBase {
     }
 
     /** Deletes all sync_inbox rows (and dependent flagged_transactions) for a device, then the device and its user. */
-    private void cleanupDevice(UUID deviceId) {
+    private void cleanupDevice(String deviceId) {
         List<UUID> userIds = jdbc.queryForList(
                 "SELECT user_id FROM devices WHERE device_id = ?", UUID.class, deviceId);
         // FK order: flagged_transactions → sync_inbox → devices → users
@@ -176,7 +176,7 @@ class SyncInboxPollerTest extends WorkerIntegrationTestBase {
         userIds.forEach(uid -> jdbc.update("DELETE FROM users WHERE user_id = ?", uid));
     }
 
-    private void cleanup(UUID batchId, UUID deviceId) {
+    private void cleanup(UUID batchId, String deviceId) {
         List<UUID> userIds = jdbc.queryForList(
                 "SELECT user_id FROM devices WHERE device_id = ?", UUID.class, deviceId);
         // FK order: flagged_transactions → sync_inbox → devices → users

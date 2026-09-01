@@ -7,7 +7,8 @@ import java.util.UUID;
 
 @Schema(description = "Device with its active certificate (if any).")
 public record DeviceWithCertDto(
-        @Schema(description = "Unique device identifier.") UUID deviceId,
+        @Schema(description = "Unique device identifier — plain string, not a UUID (CLAUDE.md §1a).",
+                example = "A1B2C3D4E5F6") String deviceId,
         @Schema(description = "Owner user identifier.") UUID userId,
         @Schema(description = "Owner user's phone number.") String userPhone,
         @Schema(description = "Device status: ACTIVE, SUSPENDED, or LOCKED.") String status,

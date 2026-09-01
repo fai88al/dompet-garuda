@@ -8,7 +8,8 @@ import java.util.UUID;
 @Schema(description = "Offline certificate record.")
 public record CertificateDto(
         @Schema(description = "Certificate identifier.") UUID certificateId,
-        @Schema(description = "Device this certificate was issued to.") UUID deviceId,
+        @Schema(description = "Device this certificate was issued to (plain string, not a UUID — CLAUDE.md §1a).",
+                example = "A1B2C3D4E5F6") String deviceId,
         @Schema(description = "Phone number of the device owner.") String userPhone,
         @Schema(description = "Amount issued in whole Rupiah.") long issuedAmount,
         @Schema(description = "Certificate status: ACTIVE, SETTLED, EXPIRED, or REVOKED.") String status,

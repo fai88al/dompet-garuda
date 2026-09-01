@@ -16,7 +16,7 @@ curl -s "http://localhost:8080/admin/sync" \
 # [
 #   {
 #     "batchId": "e5f6a7b8-c9d0-1234-ef01-345678901234",
-#     "deviceId": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+#     "deviceId": "B2C3D4E5F6A7",
 #     "status": "DONE",
 #     "syncedAfterExpiry": false,
 #     "receivedAt": "2026-06-23T08:00:00Z",

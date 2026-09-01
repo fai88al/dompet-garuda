@@ -16,9 +16,9 @@ public record SyncOfflineTxnRequest(
                 example = "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
         UUID offlineTxnId,
 
-        @Schema(description = "UUID of the receiving device.",
-                example = "b2c3d4e5-f6a7-8901-bcde-f12345678901")
-        UUID receiverDeviceId,
+        @Schema(description = "Identifier of the receiving device — plain string, not a UUID (CLAUDE.md §1a).",
+                example = "B2C3D4E5F6A7")
+        String receiverDeviceId,
 
         @Schema(description = "Transfer amount in whole Rupiah.", example = "50000")
         long amount,

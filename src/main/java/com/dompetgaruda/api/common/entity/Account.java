@@ -15,8 +15,9 @@ public class Account {
     @Column(name = "user_id")
     private UUID userId;
 
-    @Column(name = "device_id")
-    private UUID deviceId;
+    // String, not UUID — mirrors devices.device_id (CLAUDE.md §1a).
+    @Column(name = "device_id", length = 128)
+    private String deviceId;
 
     @Column(name = "type", nullable = false, length = 16)
     private String type;
@@ -37,8 +38,8 @@ public class Account {
     public void setAccountId(UUID accountId) { this.accountId = accountId; }
     public UUID getUserId() { return userId; }
     public void setUserId(UUID userId) { this.userId = userId; }
-    public UUID getDeviceId() { return deviceId; }
-    public void setDeviceId(UUID deviceId) { this.deviceId = deviceId; }
+    public String getDeviceId() { return deviceId; }
+    public void setDeviceId(String deviceId) { this.deviceId = deviceId; }
     public String getType() { return type; }
     public void setType(String type) { this.type = type; }
     public String getStatus() { return status; }

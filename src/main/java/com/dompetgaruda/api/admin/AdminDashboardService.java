@@ -95,7 +95,7 @@ public class AdminDashboardService {
         List<DeviceSummaryDto> devices = jdbc.query(
                 "SELECT device_id, status, registered_at FROM devices WHERE user_id = ? ORDER BY registered_at",
                 (rs, rowNum) -> new DeviceSummaryDto(
-                        rs.getObject("device_id", UUID.class),
+                        rs.getString("device_id"),
                         rs.getString("status"),
                         rsInstant(rs, "registered_at")
                 ),
@@ -130,7 +130,7 @@ public class AdminDashboardService {
                 );
             }
             return new DeviceWithCertDto(
-                    (UUID) row.get("device_id"),
+                    (String) row.get("device_id"),
                     (UUID) row.get("user_id"),
                     (String) row.get("user_phone"),
                     (String) row.get("status"),
@@ -177,7 +177,7 @@ public class AdminDashboardService {
                 "LIMIT ?",
                 (rs, rowNum) -> new SyncBatchDto(
                         rs.getObject("batch_id", UUID.class),
-                        rs.getObject("device_id", UUID.class),
+                        rs.getString("device_id"),
                         rs.getString("status"),
                         rs.getBoolean("synced_after_expiry"),
                         rsInstant(rs, "received_at"),
@@ -245,7 +245,7 @@ public class AdminDashboardService {
     private CertificateDto mapCertificate(ResultSet rs) throws SQLException {
         return new CertificateDto(
                 rs.getObject("certificate_id", UUID.class),
-                rs.getObject("device_id", UUID.class),
+                rs.getString("device_id"),
                 rs.getString("user_phone"),
                 rs.getLong("issued_amount"),
                 rs.getString("status"),

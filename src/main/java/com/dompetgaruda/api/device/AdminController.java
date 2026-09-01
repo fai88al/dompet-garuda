@@ -16,8 +16,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.UUID;
-
 /** {@code @Profile("api")}: depends on {@link AdminService}, itself api-profile-only (see there). */
 @RestController
 @RequestMapping("/admin")
@@ -84,7 +82,8 @@ public class AdminController {
         @ApiResponse(responseCode = "404", description = "Device not found.")
     })
     public ResponseEntity<UpdateDeviceStatusResponse> updateDeviceStatus(
-            @Parameter(description = "Device UUID.") @PathVariable UUID deviceId,
+            @Parameter(description = "Device identifier (plain string, not a UUID — CLAUDE.md §1a).")
+            @PathVariable String deviceId,
             @Valid @RequestBody UpdateDeviceStatusRequest request) {
         UpdateDeviceStatusResponse response = adminService.updateDeviceStatus(deviceId, request);
         adminService.syncMqttAccess(deviceId, response.status());

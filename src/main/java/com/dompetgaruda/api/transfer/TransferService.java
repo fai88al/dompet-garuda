@@ -110,11 +110,11 @@ public class TransferService {
         TransferResponse response = new TransferResponse(transactionId, senderBalance - amount);
         storeIdempotencyKey(device.getDeviceId(), idempotencyKey, transactionId, response);
 
-        UUID receiverDeviceId = findReceiverDeviceId(req.receiverUserId()).orElse(null);
+        String receiverDeviceId = findReceiverDeviceId(req.receiverUserId()).orElse(null);
         return new TransferOutcome(200, response, receiverDeviceId, true);
     }
 
-    private Optional<TransferResponse> findReplay(UUID deviceId, UUID idempotencyKey) {
+    private Optional<TransferResponse> findReplay(String deviceId, UUID idempotencyKey) {
         List<String> bodies = jdbc.query(
                 "SELECT response_body::text FROM idempotency_keys WHERE device_id = ? AND idempotency_key = ?",
                 (rs, rowNum) -> rs.getString(1),
@@ -125,7 +125,7 @@ public class TransferService {
         return Optional.of(readResponse(bodies.get(0)));
     }
 
-    private void storeIdempotencyKey(UUID deviceId, UUID idempotencyKey, long transactionId, TransferResponse response) {
+    private void storeIdempotencyKey(String deviceId, UUID idempotencyKey, long transactionId, TransferResponse response) {
         String json = writeResponse(response);
         try {
             jdbc.update(
@@ -143,12 +143,12 @@ public class TransferService {
         }
     }
 
-    private Optional<UUID> findReceiverDeviceId(UUID receiverUserId) {
+    private Optional<String> findReceiverDeviceId(UUID receiverUserId) {
         try {
-            UUID deviceId = jdbc.queryForObject(
+            String deviceId = jdbc.queryForObject(
                     "SELECT device_id FROM devices WHERE user_id = ? AND status = 'ACTIVE' " +
                     "ORDER BY registered_at LIMIT 1",
-                    UUID.class,
+                    String.class,
                     receiverUserId);
             return Optional.ofNullable(deviceId);
         } catch (EmptyResultDataAccessException e) {

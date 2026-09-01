@@ -1,6 +1,7 @@
 package com.dompetgaruda.api.mqtt;
 
 import com.dompetgaruda.api.ApiIntegrationTestBase;
+import com.dompetgaruda.api.DeviceIdTestSupport;
 import com.dompetgaruda.api.common.repository.DeviceRepository;
 import com.dompetgaruda.api.device.dto.CreateUserRequest;
 import com.dompetgaruda.api.device.dto.CreateUserResponse;
@@ -114,7 +115,7 @@ class MqttProvisioningTest extends ApiIntegrationTestBase {
         try {
             ResponseEntity<String> resp = rest.postForEntity(
                     "/admin/devices",
-                    new HttpEntity<>(new RegisterDeviceRequest(userId, "pk-mqtt-002", "Outage Device"), adminHeaders()),
+                    new HttpEntity<>(new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), "pk-mqtt-002", "Outage Device"), adminHeaders()),
                     String.class);
 
             assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
@@ -208,10 +209,11 @@ class MqttProvisioningTest extends ApiIntegrationTestBase {
     private RegisterDeviceResponse registerDevice(UUID userId, String pubKey) {
         ResponseEntity<RegisterDeviceResponse> resp;
         long deadline = System.currentTimeMillis() + 45_000;
+        String deviceId = DeviceIdTestSupport.randomDeviceId();
         while (true) {
             resp = rest.postForEntity(
                     "/admin/devices",
-                    new HttpEntity<>(new RegisterDeviceRequest(userId, pubKey, "MQTT Test Device"), adminHeaders()),
+                    new HttpEntity<>(new RegisterDeviceRequest(userId, deviceId, pubKey, "MQTT Test Device"), adminHeaders()),
                     RegisterDeviceResponse.class);
             if (resp.getStatusCode() == HttpStatus.CREATED || System.currentTimeMillis() >= deadline) break;
             try { Thread.sleep(200); } catch (InterruptedException ignored) { break; }
@@ -220,7 +222,7 @@ class MqttProvisioningTest extends ApiIntegrationTestBase {
         return resp.getBody();
     }
 
-    private void patchStatus(UUID deviceId, String status) {
+    private void patchStatus(String deviceId, String status) {
         ResponseEntity<UpdateDeviceStatusResponse> resp = rest.exchange(
                 "/admin/devices/" + deviceId + "/status",
                 HttpMethod.PATCH,

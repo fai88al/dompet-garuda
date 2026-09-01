@@ -1,6 +1,7 @@
 package com.dompetgaruda.api.sync;
 
 import com.dompetgaruda.api.ApiIntegrationTestBase;
+import com.dompetgaruda.api.DeviceIdTestSupport;
 import com.dompetgaruda.api.device.dto.CreateUserRequest;
 import com.dompetgaruda.api.device.dto.CreateUserResponse;
 import com.dompetgaruda.api.device.dto.RegisterDeviceRequest;
@@ -130,7 +131,7 @@ class SyncIngestTest extends ApiIntegrationTestBase {
                 50_000L,
                 Timestamp.from(Instant.now().minus(1, ChronoUnit.HOURS)));
 
-        String batch = batchJson(certId, UUID.randomUUID(), reg.deviceId());
+        String batch = batchJson(certId, UUID.randomUUID().toString(), reg.deviceId());
 
         ResponseEntity<SyncBatchResponse> resp = rest.exchange(
                 "/device/sync",
@@ -156,7 +157,7 @@ class SyncIngestTest extends ApiIntegrationTestBase {
                 "WHERE device_id = ? AND status = 'ACTIVE'",
                 String.class, reg.deviceId());
 
-        String batch = batchJson(UUID.fromString(activeCertId), UUID.randomUUID(), reg.deviceId());
+        String batch = batchJson(UUID.fromString(activeCertId), UUID.randomUUID().toString(), reg.deviceId());
 
         ResponseEntity<SyncBatchResponse> resp = rest.exchange(
                 "/device/sync",
@@ -279,7 +280,7 @@ class SyncIngestTest extends ApiIntegrationTestBase {
 
     private RegisterDeviceResponse registerDevice(UUID userId, String publicKey) {
         return adminPost("/admin/devices",
-                new RegisterDeviceRequest(userId, publicKey, "Test Device"),
+                new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), publicKey, "Test Device"),
                 RegisterDeviceResponse.class);
     }
 
@@ -306,10 +307,10 @@ class SyncIngestTest extends ApiIntegrationTestBase {
                 "SELECT certificate_id::text FROM offline_certificates " +
                 "WHERE device_id = ? AND status = 'ACTIVE'",
                 String.class, reg.deviceId());
-        return batchJson(UUID.fromString(activeCertId), UUID.randomUUID(), reg.deviceId());
+        return batchJson(UUID.fromString(activeCertId), UUID.randomUUID().toString(), reg.deviceId());
     }
 
-    private String batchJson(UUID certId, UUID receiverDeviceId, UUID senderDeviceId) {
+    private String batchJson(UUID certId, String receiverDeviceId, String senderDeviceId) {
         return """
                 {
                   "certificateId": "%s",

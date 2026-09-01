@@ -8,9 +8,11 @@ import java.util.UUID;
 @Table(name = "devices")
 public class Device {
 
+    // Plain string, sourced from the hardware team's own identifier scheme (CLAUDE.md
+    // §1a) — no longer a backend-generated UUID. Must never contain '/' or '|'.
     @Id
-    @Column(name = "device_id")
-    private UUID deviceId;
+    @Column(name = "device_id", length = 128)
+    private String deviceId;
 
     @Column(name = "user_id", nullable = false)
     private UUID userId;
@@ -40,7 +42,8 @@ public class Device {
 
     @PrePersist
     void prePersist() {
-        if (deviceId == null) deviceId = UUID.randomUUID();
+        // deviceId is supplied by the caller (hardware-sourced, CLAUDE.md §1a) — never
+        // generated here, unlike the old UUID scheme.
         Instant now = Instant.now();
         if (registeredAt == null) registeredAt = now;
         updatedAt = now;
@@ -51,8 +54,8 @@ public class Device {
         updatedAt = Instant.now();
     }
 
-    public UUID getDeviceId() { return deviceId; }
-    public void setDeviceId(UUID deviceId) { this.deviceId = deviceId; }
+    public String getDeviceId() { return deviceId; }
+    public void setDeviceId(String deviceId) { this.deviceId = deviceId; }
     public UUID getUserId() { return userId; }
     public void setUserId(UUID userId) { this.userId = userId; }
     public String getPublicKey() { return publicKey; }
