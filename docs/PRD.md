@@ -161,10 +161,12 @@ full table).
 ## 10. Phase 3 — Status: Revision Received, Renegotiation Pending
 
 Faisal returned a revision (v1.1) of the original Phase 3 proposal (Transaction
-History, Analytics Dashboard, Notification Reconciliation). The three features
-themselves are unchanged in direction, but the revision adds requirements that
-**meaningfully expand scope without changing the proposed price** (still capped at
-Rp 8,800,000). Specifically:
+History, Analytics Dashboard, Notification Reconciliation), which has since been
+**approved**. The three features themselves are unchanged in direction. v1.1 expanded
+scope beyond the original estimate without changing the price cap (Rp 8,800,000) —
+one specific item from that expanded scope (the staging/UAT environment requirement)
+was subsequently **descoped by mutual agreement with Faisal**, deferred to a separate
+future proposal. What remains locked in for this phase:
 
 - Notification must include a **reconciliation mechanism** for devices offline at
   settlement time, not just a one-shot MQTT publish (expands Feature A).
@@ -176,8 +178,12 @@ Rp 8,800,000). Specifically:
   not present in the original estimate (expands Feature B).
 - Dashboard must add total Rupiah value, per-status counts, active user/device counts,
   and 7-day/30-day trend lines (expands Feature C well past the original three metrics).
-- A **staging/UAT environment** must exist before production releases — infrastructure
-  that does not currently exist anywhere in this project (new, unbudgeted).
+- ~~A staging/UAT environment must exist before production releases~~ — **descoped by
+  mutual agreement with Faisal (August 2026).** This requirement is deferred to a
+  separate future proposal, not part of this phase. Deployment for Phase 3 continues
+  under the existing discipline: backup immediately before any schema-altering
+  deployment, rollback command ready before starting, verify directly against
+  production afterward — the same process already used for every prior phase.
 - Formal acceptance criteria and test cases per feature, agreed before work starts.
 - IP ownership, milestone-based payment (5 milestones), and a 6-month bug warranty —
   business/legal terms, not engineering scope, but material to the agreement.
@@ -223,10 +229,10 @@ cycle verified end-to-end in production.
 |---|------|--------|
 | 1 | Original proposal (v1.0) sent | ✅ done |
 | 2 | Revision (v1.1) received from Faisal | ✅ done |
-| 3 | Scope-vs-price mismatch identified and flagged | ✅ done (this revision) |
-| 4 | Renegotiate scope or budget with Faisal | blocking, not yet started |
-| 5 | RAB/proposal finalized and approved | pending |
-| 6 | `CLAUDE.md`/`PRD.md` updated for locked Phase 3 scope | pending (after step 5) |
+| 3 | Scope-vs-price mismatch identified and flagged | ✅ done |
+| 4 | v1.1 approved as-is by Rizki | ✅ done |
+| 5 | Staging/UAT requirement descoped by mutual agreement, deferred to a future proposal | ✅ done (this revision) |
+| 6 | `CLAUDE.md`/`PRD.md` updated for locked Phase 3 scope | ✅ done (this revision) |
 | 7 | Feature A — Notification + reconciliation | pending |
 | 8 | Feature B — Transaction history + status + audit log | pending |
 | 9 | Feature C — Analytics dashboard | pending |

@@ -337,6 +337,11 @@ docker compose -f docker-compose.prod.yml exec mosquitto sh -c "mosquitto_ctrl -
   hard constraints: no `/`, no `|`.
 - **Don't apply the string-ID change to `userId`, `certificateId`, `requestId`, or any
   other identifier.** This change is scoped to `deviceId` only.
+- **Don't build a staging environment, second deployment target, or any parallel
+  infrastructure for Phase 3 (§17).** It was explicitly descoped by agreement with
+  the client — deploy Phase 3 work the same way every prior phase was deployed.
+- **Don't invent a reversal/refund mechanism to make the `REVERSED` status enum feel
+  complete (§17.2).** Raise it as an open question if it comes up — don't silently build it.
 
 ---
 
@@ -393,6 +398,117 @@ Obsidian vault note `MQTT Dynamic Security` or the standalone
   device-identity decisions (like this one) and should receive the GATT spec in the
   same conversation.**
 - Server public key embedding in firmware, no rotation plan yet.
-- Receiving device in an offline transfer gets no MQTT push (proposed fix under
-  discussion in the Phase 3 revision negotiation — see the Obsidian vault note
-  `Phase 3 - Proposed Enhancements` and the pending revision analysis).
+
+---
+
+## 17. Phase 3 scope — Notification Reconciliation, Transaction History, Analytics (APPROVED)
+
+Faisal approved proposal revision v1.1 in August 2026. This section is the locked
+engineering spec — read it fully before starting any Phase 3 PR. Build order:
+§17.1 → §17.2 → §17.3, same easiest-to-hardest sequencing as the original proposal.
+
+> [!warning] Staging/UAT is explicitly OUT of scope for this phase
+> v1.1 originally required a staging/UAT environment before any production release.
+> **This was descoped by mutual agreement with Faisal and deferred to a separate
+> future proposal.** Do not build any staging infrastructure, second environment, or
+> parallel deployment target as part of any Phase 3 PR. Deployment for this phase
+> follows the same discipline used for every prior phase: take a backup immediately
+> before a schema-altering deploy, have the rollback command ready before starting,
+> verify directly against production afterward.
+
+### 17.1 Feature A — Notification Reconciliation for Offline Transfers
+
+The original Phase 3 proposal's notification feature (one-shot `payment-received`
+publish, mirroring the online flow) is **not sufficient per v1.1**. A receiving device
+that is offline at the moment of settlement must still find out once it reconnects —
+not just silently miss the notification forever.
+
+**Design:**
+1. Add a `notification_status` column (`PENDING`, `DELIVERED`, `EXPIRED` — pick a
+   short enum, confirm naming with the human developer before implementing) to a new
+   or existing table tracking each `payment-received` event that needs delivery
+   confirmation. This is metadata about notification delivery, not a new source of
+   balance truth — the ledger remains authoritative regardless of this column's value.
+2. Worker settlement flow (§3, offline sync) publishes the notification exactly as
+   before, but now also records the attempt with `notification_status = PENDING`.
+3. **New reconciliation check**, triggered when a device reconnects and calls any
+   authenticated endpoint (piggyback on existing traffic — do not require a new
+   "I'm online now" ping endpoint unless the human developer explicitly asks for one):
+   query for any `PENDING` notifications belonging to that device, re-publish them,
+   mark `DELIVERED` on confirmed publish.
+4. This does NOT change what the device sees when it calls `GET /device/balance` —
+   that number is always correct regardless of notification status, per invariant 8
+   (§7) that MQTT carries no financial authority. This feature only affects whether a
+   push notification arrives, never balance correctness.
+
+### 17.2 Feature B — Transaction History with Status and Audit Log
+
+**Two new endpoints** (confirmed scope, unchanged from the original proposal):
+
+```
+GET /device/transactions?page=0&size=20&type=ONLINE_TRANSFER&from=...&to=...
+GET /admin/users/{userId}/transactions?page=0&size=20&type=...&from=...&to=...
+```
+
+Both are pure reads over `ledger_entries`/`ledger_transactions` — no new balance
+columns, per §7 invariant 1. Pagination is mandatory from the first implementation,
+not a later optimization.
+
+**New per v1.1 — a cross-system transaction status field.** Every transaction row
+returned by these endpoints must show a status: `SUCCESS`, `PENDING`, `FAILED`, or
+`REVERSED`. This status must be **derivable consistently** across the ledger, these
+API responses, the backoffice UI, and (eventually) the device's own display.
+
+> [!warning] `REVERSED` implies a reversal concept that doesn't exist yet
+> No refund/reversal mechanism currently exists anywhere in this system. Before
+> implementing `REVERSED` as a real status value, confirm with the human developer
+> whether this phase actually builds a reversal capability, or whether `REVERSED` is
+> simply reserved in the enum for future use and never actually produced yet. Do not
+> silently invent a reversal flow to make the enum "complete" — raise this explicitly.
+
+Status derivation approach (subject to confirmation, not fully locked):
+- `SUCCESS` — a settled `ledger_transactions` row exists (online flows: exists
+  immediately; offline flows: exists after worker settlement).
+- `PENDING` — an offline transaction uploaded via sync but not yet settled by the
+  worker (i.e., still sitting in `sync_inbox`).
+- `FAILED` — a transaction that failed validation and was flagged
+  (`flagged_transactions`), never posted to the ledger.
+- `REVERSED` — see the warning above.
+
+**New — admin access audit log.** Every time an admin calls
+`GET /admin/users/{userId}/transactions`, record: admin's identity (from JWT), the
+`userId` whose data was accessed, timestamp, and the query parameters used. A new
+`admin_access_log` table, written to on every call — this is a genuinely new
+subsystem, not a modification of an existing one. Do not skip writing this log even
+on an empty result set; the access itself is what's being audited, not the data
+returned.
+
+### 17.3 Feature C — Analytics Dashboard (build after §17.2, shares query shape)
+
+```
+GET /admin/analytics/overview?from=...&to=...
+```
+
+Metrics (confirmed scope per v1.1, more than the original proposal's three):
+- Total transaction value (Rupiah) and count, per day and for the selected period
+- Transaction counts by status (`SUCCESS`/`FAILED`/`PENDING`/`REVERSED` if used)
+- Transaction type composition (offline / online / QR)
+- Active users (daily / 7-day / 30-day)
+- Device status breakdown (active / suspended / locked)
+- 7-day and 30-day transaction and device growth trends
+
+Aggregation queries are direct SQL, not ORM-generated, consistent with this project's
+existing money-query philosophy (§2). Dashboard is explicitly **read-only** — it must
+never write to the ledger under any circumstance, and query cost must not degrade the
+performance of live transaction processing. If an aggregation query risks that, flag
+it rather than shipping it silently slow.
+
+### Deliverables required for every Phase 3 PR (per v1.1, in addition to §13)
+
+- Written acceptance criteria and test cases, agreed with the human developer
+  **before** implementation starts — v1.1 requires this explicitly; a PR without
+  pre-agreed acceptance criteria attached is incomplete regardless of code quality.
+- Release notes for any production deployment: version, change list, deployment
+  steps, rollback plan, and test results — per the deployment discipline in the
+  warning above (staging is descoped, so this documentation is what substitutes for
+  a staging sign-off).
