@@ -2,6 +2,7 @@ package com.dompetgaruda.api.device;
 
 import com.dompetgaruda.api.ApiIntegrationTestBase;
 import com.dompetgaruda.api.DeviceIdTestSupport;
+import com.dompetgaruda.api.Ed25519TestSupport;
 import com.dompetgaruda.api.device.dto.*;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -92,7 +93,7 @@ class DeviceStatusTest extends ApiIntegrationTestBase {
     private RegisterDeviceResponse registerDevice(UUID userId, String pubKey) {
         ResponseEntity<RegisterDeviceResponse> resp = rest.postForEntity(
                 "/admin/devices",
-                new HttpEntity<>(new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), pubKey, "Test Device"), adminHeaders()),
+                new HttpEntity<>(new RegisterDeviceRequest(userId, DeviceIdTestSupport.randomDeviceId(), Ed25519TestSupport.derivePublicKeyBase64(pubKey), "Test Device"), adminHeaders()),
                 RegisterDeviceResponse.class);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         return resp.getBody();
