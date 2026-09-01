@@ -7,3 +7,8 @@ target/
 .vscode/
 !mvnw
 !mvnw.cmd
+
+.omc
+.omc/*
+
+docs/superpowers/*
