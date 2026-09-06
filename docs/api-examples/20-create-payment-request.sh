@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # FR20 — POST /device/payment-request
-# Prerequisite: a registered device token for the RECEIVER (see 05-register-device.sh).
+# Prerequisite: a registered, ACTIVE device for the RECEIVER (see 05-register-device.sh).
+# deviceId is a plain string (CLAUDE.md §1a), not a UUID.
 
 BASE_URL="${BASE_URL:-http://localhost:8080}"
-RECEIVER_DEVICE_TOKEN="replace-with-receiver-device-token"
+RECEIVER_DEVICE_ID="replace-with-receiver-device-id"
 
 curl -s -X POST "${BASE_URL}/device/payment-request" \
-  -H "Authorization: Bearer ${RECEIVER_DEVICE_TOKEN}" \
+  -H "Receiver-Device-Id: ${RECEIVER_DEVICE_ID}" \
   -H "Content-Type: application/json" \
   -d '{"amount": 75000}' | jq .
 
@@ -23,4 +24,4 @@ curl -s -X POST "${BASE_URL}/device/payment-request" \
 
 # Error cases:
 #   400 - amount <= 0
-#   401 - missing/invalid device Bearer token
+#   401 - missing Receiver-Device-Id header, or device not registered/not ACTIVE

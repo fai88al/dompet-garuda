@@ -44,7 +44,7 @@ class PaymentRequestTest extends ApiIntegrationTestBase {
         RegisterDeviceResponse receiverDevice = registerDevice(receiverId, "pk-qr-001");
 
         Instant before = Instant.now();
-        CreatePaymentRequestResponse resp = createPaymentRequest(receiverDevice.deviceToken(), 75_000L);
+        CreatePaymentRequestResponse resp = createPaymentRequest(receiverDevice.deviceId(), 75_000L);
         Instant after = Instant.now();
 
         assertThat(resp.requestId()).isNotNull();
@@ -60,8 +60,8 @@ class PaymentRequestTest extends ApiIntegrationTestBase {
         UUID receiverId = createUser("+62842000002");
         RegisterDeviceResponse receiverDevice = registerDevice(receiverId, "pk-qr-002");
 
-        CreatePaymentRequestResponse first = createPaymentRequest(receiverDevice.deviceToken(), 10_000L);
-        CreatePaymentRequestResponse second = createPaymentRequest(receiverDevice.deviceToken(), 10_000L);
+        CreatePaymentRequestResponse first = createPaymentRequest(receiverDevice.deviceId(), 10_000L);
+        CreatePaymentRequestResponse second = createPaymentRequest(receiverDevice.deviceId(), 10_000L);
 
         assertThat(first.nonce()).isNotEqualTo(second.nonce());
     }
@@ -73,10 +73,30 @@ class PaymentRequestTest extends ApiIntegrationTestBase {
 
         ResponseEntity<String> resp = rest.exchange(
                 "/device/payment-request", HttpMethod.POST,
-                new HttpEntity<>(new CreatePaymentRequestRequest(0L), deviceHeaders(receiverDevice.deviceToken(), null)),
+                new HttpEntity<>(new CreatePaymentRequestRequest(0L), receiverDeviceIdHeaders(receiverDevice.deviceId())),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void create_missingReceiverDeviceIdHeader_returns401() {
+        ResponseEntity<String> resp = rest.exchange(
+                "/device/payment-request", HttpMethod.POST,
+                new HttpEntity<>(new CreatePaymentRequestRequest(10_000L), receiverDeviceIdHeaders(null)),
+                String.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void create_unknownReceiverDeviceId_returns401() {
+        ResponseEntity<String> resp = rest.exchange(
+                "/device/payment-request", HttpMethod.POST,
+                new HttpEntity<>(new CreatePaymentRequestRequest(10_000L), receiverDeviceIdHeaders("does-not-exist")),
+                String.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     // -------------------------------------------------------------------------
@@ -91,8 +111,8 @@ class PaymentRequestTest extends ApiIntegrationTestBase {
         RegisterDeviceResponse payerDevice = registerDevice(payerId, "pk-qr-005");
         topUp(payerId, 200_000L);
 
-        CreatePaymentRequestResponse request = createPaymentRequest(receiverDevice.deviceToken(), 50_000L);
-        PayPaymentRequestResponse resp = pay(payerDevice.deviceToken(), request.requestId(), UUID.randomUUID());
+        CreatePaymentRequestResponse request = createPaymentRequest(receiverDevice.deviceId(), 50_000L);
+        PayPaymentRequestResponse resp = pay(payerDevice.deviceId(), request.requestId(), UUID.randomUUID());
 
         assertThat(resp.transactionId()).isPositive();
         assertThat(resp.payerNewBalance()).isEqualTo(150_000L);
@@ -121,14 +141,14 @@ class PaymentRequestTest extends ApiIntegrationTestBase {
         RegisterDeviceResponse payerDevice = registerDevice(payerId, "pk-qr-007");
         topUp(payerId, 200_000L);
 
-        CreatePaymentRequestResponse request = createPaymentRequest(receiverDevice.deviceToken(), 50_000L);
-        pay(payerDevice.deviceToken(), request.requestId(), UUID.randomUUID());
+        CreatePaymentRequestResponse request = createPaymentRequest(receiverDevice.deviceId(), 50_000L);
+        pay(payerDevice.deviceId(), request.requestId(), UUID.randomUUID());
 
         long entriesAfterFirst = countRows("ledger_entries");
 
         ResponseEntity<String> second = rest.exchange(
                 "/device/payment-request/" + request.requestId() + "/pay", HttpMethod.POST,
-                new HttpEntity<>(null, deviceHeaders(payerDevice.deviceToken(), UUID.randomUUID().toString())),
+                new HttpEntity<>(null, payerDeviceIdHeaders(payerDevice.deviceId(), UUID.randomUUID().toString())),
                 String.class);
 
         assertThat(second.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
@@ -151,7 +171,7 @@ class PaymentRequestTest extends ApiIntegrationTestBase {
 
         ResponseEntity<String> resp = rest.exchange(
                 "/device/payment-request/" + requestId + "/pay", HttpMethod.POST,
-                new HttpEntity<>(null, deviceHeaders(payerDevice.deviceToken(), UUID.randomUUID().toString())),
+                new HttpEntity<>(null, payerDeviceIdHeaders(payerDevice.deviceId(), UUID.randomUUID().toString())),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.GONE);
@@ -172,11 +192,11 @@ class PaymentRequestTest extends ApiIntegrationTestBase {
         RegisterDeviceResponse receiverDevice = registerDevice(receiverId, "pk-qr-009");
         topUp(receiverId, 200_000L);
 
-        CreatePaymentRequestResponse request = createPaymentRequest(receiverDevice.deviceToken(), 20_000L);
+        CreatePaymentRequestResponse request = createPaymentRequest(receiverDevice.deviceId(), 20_000L);
 
         ResponseEntity<String> resp = rest.exchange(
                 "/device/payment-request/" + request.requestId() + "/pay", HttpMethod.POST,
-                new HttpEntity<>(null, deviceHeaders(receiverDevice.deviceToken(), UUID.randomUUID().toString())),
+                new HttpEntity<>(null, payerDeviceIdHeaders(receiverDevice.deviceId(), UUID.randomUUID().toString())),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -194,12 +214,12 @@ class PaymentRequestTest extends ApiIntegrationTestBase {
         RegisterDeviceResponse payerDevice = registerDevice(payerId, "pk-qr-011");
         topUp(payerId, 10_000L);
 
-        CreatePaymentRequestResponse request = createPaymentRequest(receiverDevice.deviceToken(), 50_000L);
+        CreatePaymentRequestResponse request = createPaymentRequest(receiverDevice.deviceId(), 50_000L);
         long entriesBefore = countRows("ledger_entries");
 
         ResponseEntity<String> resp = rest.exchange(
                 "/device/payment-request/" + request.requestId() + "/pay", HttpMethod.POST,
-                new HttpEntity<>(null, deviceHeaders(payerDevice.deviceToken(), UUID.randomUUID().toString())),
+                new HttpEntity<>(null, payerDeviceIdHeaders(payerDevice.deviceId(), UUID.randomUUID().toString())),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
@@ -218,7 +238,7 @@ class PaymentRequestTest extends ApiIntegrationTestBase {
 
         ResponseEntity<String> resp = rest.exchange(
                 "/device/payment-request/" + UUID.randomUUID() + "/pay", HttpMethod.POST,
-                new HttpEntity<>(null, deviceHeaders(payerDevice.deviceToken(), UUID.randomUUID().toString())),
+                new HttpEntity<>(null, payerDeviceIdHeaders(payerDevice.deviceId(), UUID.randomUUID().toString())),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
@@ -236,13 +256,13 @@ class PaymentRequestTest extends ApiIntegrationTestBase {
         RegisterDeviceResponse payerDevice = registerDevice(payerId, "pk-qr-014");
         topUp(payerId, 200_000L);
 
-        CreatePaymentRequestResponse request = createPaymentRequest(receiverDevice.deviceToken(), 50_000L);
+        CreatePaymentRequestResponse request = createPaymentRequest(receiverDevice.deviceId(), 50_000L);
         UUID idempotencyKey = UUID.randomUUID();
 
-        PayPaymentRequestResponse first = pay(payerDevice.deviceToken(), request.requestId(), idempotencyKey);
+        PayPaymentRequestResponse first = pay(payerDevice.deviceId(), request.requestId(), idempotencyKey);
         long entriesAfterFirst = countRows("ledger_entries");
 
-        PayPaymentRequestResponse second = pay(payerDevice.deviceToken(), request.requestId(), idempotencyKey);
+        PayPaymentRequestResponse second = pay(payerDevice.deviceId(), request.requestId(), idempotencyKey);
 
         assertThat(second.transactionId()).isEqualTo(first.transactionId());
         assertThat(second.payerNewBalance()).isEqualTo(first.payerNewBalance());
@@ -259,14 +279,44 @@ class PaymentRequestTest extends ApiIntegrationTestBase {
         RegisterDeviceResponse payerDevice = registerDevice(payerId, "pk-qr-016");
         topUp(payerId, 100_000L);
 
-        CreatePaymentRequestResponse request = createPaymentRequest(receiverDevice.deviceToken(), 20_000L);
+        CreatePaymentRequestResponse request = createPaymentRequest(receiverDevice.deviceId(), 20_000L);
 
         ResponseEntity<String> resp = rest.exchange(
                 "/device/payment-request/" + request.requestId() + "/pay", HttpMethod.POST,
-                new HttpEntity<>(null, deviceHeaders(payerDevice.deviceToken(), null)),
+                new HttpEntity<>(null, payerDeviceIdHeaders(payerDevice.deviceId(), null)),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void pay_missingPayerDeviceIdHeader_returns401() {
+        UUID receiverId = createUser("+62842000018");
+        RegisterDeviceResponse receiverDevice = registerDevice(receiverId, "pk-qr-017");
+
+        CreatePaymentRequestResponse request = createPaymentRequest(receiverDevice.deviceId(), 20_000L);
+
+        ResponseEntity<String> resp = rest.exchange(
+                "/device/payment-request/" + request.requestId() + "/pay", HttpMethod.POST,
+                new HttpEntity<>(null, payerDeviceIdHeaders(null, UUID.randomUUID().toString())),
+                String.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    @Test
+    void pay_unknownPayerDeviceId_returns401() {
+        UUID receiverId = createUser("+62842000019");
+        RegisterDeviceResponse receiverDevice = registerDevice(receiverId, "pk-qr-018");
+
+        CreatePaymentRequestResponse request = createPaymentRequest(receiverDevice.deviceId(), 20_000L);
+
+        ResponseEntity<String> resp = rest.exchange(
+                "/device/payment-request/" + request.requestId() + "/pay", HttpMethod.POST,
+                new HttpEntity<>(null, payerDeviceIdHeaders("does-not-exist", UUID.randomUUID().toString())),
+                String.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     // -------------------------------------------------------------------------
@@ -285,19 +335,19 @@ class PaymentRequestTest extends ApiIntegrationTestBase {
         adminPost("/admin/users/" + userId + "/topup", new TopUpRequest(amount, "test-topup"), TopUpResponse.class);
     }
 
-    private CreatePaymentRequestResponse createPaymentRequest(String deviceToken, long amount) {
+    private CreatePaymentRequestResponse createPaymentRequest(String receiverDeviceId, long amount) {
         ResponseEntity<CreatePaymentRequestResponse> resp = rest.exchange(
                 "/device/payment-request", HttpMethod.POST,
-                new HttpEntity<>(new CreatePaymentRequestRequest(amount), deviceHeaders(deviceToken, null)),
+                new HttpEntity<>(new CreatePaymentRequestRequest(amount), receiverDeviceIdHeaders(receiverDeviceId)),
                 CreatePaymentRequestResponse.class);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         return resp.getBody();
     }
 
-    private PayPaymentRequestResponse pay(String deviceToken, UUID requestId, UUID idempotencyKey) {
+    private PayPaymentRequestResponse pay(String payerDeviceId, UUID requestId, UUID idempotencyKey) {
         ResponseEntity<PayPaymentRequestResponse> resp = rest.exchange(
                 "/device/payment-request/" + requestId + "/pay", HttpMethod.POST,
-                new HttpEntity<>(null, deviceHeaders(deviceToken, idempotencyKey.toString())),
+                new HttpEntity<>(null, payerDeviceIdHeaders(payerDeviceId, idempotencyKey.toString())),
                 PayPaymentRequestResponse.class);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
         return resp.getBody();
@@ -325,10 +375,21 @@ class PaymentRequestTest extends ApiIntegrationTestBase {
         return resp.getBody();
     }
 
-    private HttpHeaders deviceHeaders(String token, String idempotencyKey) {
+    private HttpHeaders receiverDeviceIdHeaders(String receiverDeviceId) {
         HttpHeaders h = new HttpHeaders();
         h.setContentType(MediaType.APPLICATION_JSON);
-        h.setBearerAuth(token);
+        if (receiverDeviceId != null) {
+            h.set("Receiver-Device-Id", receiverDeviceId);
+        }
+        return h;
+    }
+
+    private HttpHeaders payerDeviceIdHeaders(String payerDeviceId, String idempotencyKey) {
+        HttpHeaders h = new HttpHeaders();
+        h.setContentType(MediaType.APPLICATION_JSON);
+        if (payerDeviceId != null) {
+            h.set("Payer-Device-Id", payerDeviceId);
+        }
         if (idempotencyKey != null) {
             h.set("Idempotency-Key", idempotencyKey);
         }

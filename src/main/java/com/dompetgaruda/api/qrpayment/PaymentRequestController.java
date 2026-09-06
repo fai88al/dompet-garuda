@@ -1,7 +1,7 @@
 package com.dompetgaruda.api.qrpayment;
 
-import com.dompetgaruda.api.auth.DeviceTokenVerifier;
 import com.dompetgaruda.api.common.entity.Device;
+import com.dompetgaruda.api.common.repository.DeviceRepository;
 import com.dompetgaruda.api.mqtt.MqttPublisherService;
 import com.dompetgaruda.api.qrpayment.dto.CreatePaymentRequestRequest;
 import com.dompetgaruda.api.qrpayment.dto.CreatePaymentRequestResponse;
@@ -13,7 +13,6 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -22,7 +21,9 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.UUID;
 
 /**
- * FR20/FR21 — Bayar QR Online. Requires a device Bearer token.
+ * FR20/FR21 — Bayar QR Online. Create identifies the receiver via a {@code Receiver-Device-Id}
+ * header; pay identifies the payer via a {@code Payer-Device-Id} header. Neither endpoint uses
+ * a device Bearer token (CLAUDE.md §1a — bare device-id lookup, same pattern as TransferController).
  *
  * <p>Not the national QRIS standard — settles entirely inside this system's own ledger
  * (CLAUDE.md §1). Swagger tag is deliberately "Bayar QR", never "QRIS".
@@ -30,17 +31,17 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/device/payment-request")
 @Profile("api")
-@Tag(name = "Bayar QR", description = "Device-facing Bayar QR Online endpoints — authenticate with a device Bearer token.")
+@Tag(name = "Bayar QR", description = "Device-facing Bayar QR Online endpoints.")
 public class PaymentRequestController {
 
-    private final DeviceTokenVerifier verifier;
+    private final DeviceRepository deviceRepository;
     private final PaymentRequestService service;
     // Null in the api profile today — same documented limitation as TransferController.
     @Autowired(required = false)
     private MqttPublisherService mqttPublisher;
 
-    public PaymentRequestController(DeviceTokenVerifier verifier, PaymentRequestService service) {
-        this.verifier = verifier;
+    public PaymentRequestController(DeviceRepository deviceRepository, PaymentRequestService service) {
+        this.deviceRepository = deviceRepository;
         this.service = service;
     }
 
@@ -48,16 +49,17 @@ public class PaymentRequestController {
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(
             summary = "Create a Bayar QR Online payment request (FR20)",
-            description = "The authenticated device's owning user becomes the receiver. Returns a QR-encodable payload the payer scans.")
+            description = "The named receiver device's owning user becomes the receiver. Returns a QR-encodable payload the payer scans.")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Payment request created."),
             @ApiResponse(responseCode = "400", description = "amount <= 0."),
-            @ApiResponse(responseCode = "401", description = "Missing or invalid device Bearer token.")
+            @ApiResponse(responseCode = "401", description = "Missing Receiver-Device-Id header, or device not registered/not ACTIVE.")
     })
     public CreatePaymentRequestResponse create(
-            @RequestHeader(name = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
+            @Parameter(description = "Receiving device's id (CLAUDE.md §1a). Required — identifies the receiving device and its owning user.", required = true)
+            @RequestHeader(name = "Receiver-Device-Id", required = false) String receiverDeviceId,
             @RequestBody CreatePaymentRequestRequest request) {
-        Device device = resolveDevice(authHeader);
+        Device device = resolveDeviceById(receiverDeviceId);
         return service.create(device, request);
     }
 
@@ -70,19 +72,20 @@ public class PaymentRequestController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Payment posted (or replayed from a prior identical Idempotency-Key)."),
             @ApiResponse(responseCode = "400", description = "Missing/invalid Idempotency-Key, or self-payment."),
-            @ApiResponse(responseCode = "401", description = "Missing or invalid device Bearer token."),
+            @ApiResponse(responseCode = "401", description = "Missing Payer-Device-Id header, or device not registered/not ACTIVE."),
             @ApiResponse(responseCode = "404", description = "requestId does not exist."),
             @ApiResponse(responseCode = "409", description = "Request is already PAID or already EXPIRED."),
             @ApiResponse(responseCode = "410", description = "Request just expired (detected at pay time); now marked EXPIRED."),
             @ApiResponse(responseCode = "422", description = "Insufficient payer online balance.")
     })
     public ResponseEntity<PayPaymentRequestResponse> pay(
-            @RequestHeader(name = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
+            @Parameter(description = "Paying device's id (CLAUDE.md §1a). Required — identifies the paying device and its owning user.", required = true)
+            @RequestHeader(name = "Payer-Device-Id", required = false) String payerDeviceId,
             @Parameter(description = "UUID v4 generated by the device. Required — a missing header is a 400.", required = true)
             @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKeyHeader,
             @PathVariable UUID requestId) {
 
-        Device device = resolveDevice(authHeader);
+        Device device = resolveDeviceById(payerDeviceId);
         UUID idempotencyKey = parseIdempotencyKey(idempotencyKeyHeader);
 
         PayOutcome outcome = service.pay(device, requestId, idempotencyKey);
@@ -106,13 +109,13 @@ public class PaymentRequestController {
         }
     }
 
-    private Device resolveDevice(String authHeader) {
-        String rawToken = null;
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            rawToken = authHeader.substring(7).strip();
+    private Device resolveDeviceById(String deviceId) {
+        if (deviceId == null || deviceId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing device id header");
         }
-        return verifier.verify(rawToken)
+        return deviceRepository.findById(deviceId)
+                .filter(d -> "ACTIVE".equals(d.getStatus()))
                 .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.UNAUTHORIZED, "Invalid device token"));
+                        HttpStatus.UNAUTHORIZED, "Invalid device id"));
     }
 }
