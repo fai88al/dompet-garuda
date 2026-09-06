@@ -4,6 +4,7 @@ import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Profile;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -43,7 +44,11 @@ public class PouchReconciliationJob {
         this.jdbc = jdbc;
     }
 
-    @Scheduled(fixedDelay = 3_600_000)
+    // initialDelay defers the first automatic run past worker startup — an immediate first
+    // run (Spring's default for fixedDelay with no initialDelay) has no benefit for an hourly
+    // audit job and, in tests sharing this context, used to race a directly-invoked
+    // doReconcile() call (see the unique index added in V9 for the actual concurrency fix).
+    @Scheduled(fixedDelay = 3_600_000, initialDelay = 3_600_000)
     @SchedulerLock(name = "reconciliation-job", lockAtMostFor = "PT55M", lockAtLeastFor = "PT30S")
     public void reconcile() {
         doReconcile();
@@ -76,8 +81,9 @@ public class PouchReconciliationJob {
             checked++;
 
             if (expectedRemaining != actualRemaining && !hasUnresolvedFlag(certId)) {
-                insertFlag(certId, expectedRemaining, actualRemaining);
-                mismatches++;
+                if (insertFlag(certId, expectedRemaining, actualRemaining)) {
+                    mismatches++;
+                }
             }
         }
 
@@ -126,11 +132,23 @@ public class PouchReconciliationJob {
         return count != null && count > 0;
     }
 
-    private void insertFlag(UUID certId, long expected, long actual) {
-        jdbc.update(
-                "INSERT INTO flagged_transactions (certificate_id, reason, detail) " +
-                "VALUES (?, 'RECON_MISMATCH', ?)",
-                certId,
-                "expected=" + expected + " actual=" + actual);
+    /**
+     * Inserts the flag; returns {@code false} instead of throwing if a concurrent
+     * reconciliation pass already flagged this certificate first — the unique index from
+     * V9 is the final guard against the check-then-insert race above, mirroring the
+     * idempotency_keys pattern (CLAUDE.md §7 rule 4).
+     */
+    private boolean insertFlag(UUID certId, long expected, long actual) {
+        try {
+            jdbc.update(
+                    "INSERT INTO flagged_transactions (certificate_id, reason, detail) " +
+                    "VALUES (?, 'RECON_MISMATCH', ?)",
+                    certId,
+                    "expected=" + expected + " actual=" + actual);
+            return true;
+        } catch (DataIntegrityViolationException e) {
+            log.debug("Certificate {} already flagged by a concurrent reconciliation pass", certId);
+            return false;
+        }
     }
 }
