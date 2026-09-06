@@ -3,12 +3,12 @@
 #
 # Prerequisites:
 #   - API running (./mvnw spring-boot:run -Dspring-boot.run.profiles=api)
-#   - A registered sender device id (see 05-register-device.sh) with a funded owner
-#     (see 03-topup.sh) and a registered receiver device id (see 01-create-user.sh)
+#   - A registered sender device id (see 02-register-device.sh) with a funded owner
+#     (see 03-top-up.sh) and a registered receiver device id (see 02-register-device.sh)
 
-BASE_URL="https://api.dompetgaruda.com"
-DEVICE_ID="2175475406"
-RECEIVER_DEVICE_ID="1848691718"
+BASE_URL="${BASE_URL:-http://localhost:8080}"
+DEVICE_ID="A1B2C3D4E5F6"
+RECEIVER_DEVICE_ID="C3D4E5F6A7B8"
 IDEMPOTENCY_KEY=$(uuidgen)
 
 curl -s -X POST "${BASE_URL}/device/transfer" \

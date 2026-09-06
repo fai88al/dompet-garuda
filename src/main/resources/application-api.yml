@@ -6,6 +6,13 @@ spring:
     exclude:
       - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
 
+# Groups Swagger UI endpoints alphabetically by @Tag so related endpoints (Admin, Bayar QR,
+# Device, Sync, Transfer, ...) stay together instead of listing in arbitrary scan order.
+springdoc:
+  swagger-ui:
+    tags-sorter: alpha
+    operations-sorter: alpha
+
 # Scheduled jobs are disabled in the api profile — the worker profile runs them.
 # Spring's @EnableScheduling is gated in WorkerConfig (profile=worker only).
 

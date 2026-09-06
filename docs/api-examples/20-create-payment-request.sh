@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # FR20 — POST /device/payment-request
-# Prerequisite: a registered, ACTIVE device for the RECEIVER (see 05-register-device.sh).
+# Prerequisite: a registered, ACTIVE device for the RECEIVER (see 02-register-device.sh).
 # deviceId is a plain string (CLAUDE.md §1a), not a UUID.
 
 BASE_URL="${BASE_URL:-http://localhost:8080}"

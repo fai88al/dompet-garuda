@@ -2,15 +2,18 @@
 # Lists flagged transactions (anomalies from settlement/reconciliation).
 # Default: unresolved only. Pass ?resolved=true to include resolved rows too.
 # Prerequisite: API server running (./mvnw spring-boot:run -Dspring-boot.run.profiles=api)
-# Replace ADMIN_API_TOKEN with the value from your .env file.
+#               ADMIN_TOKEN — JWT obtained from 13-admin-login.sh.
+
+BASE_URL="${BASE_URL:-http://localhost:8080}"
+ADMIN_TOKEN="<ADMIN_TOKEN>"
 
 # Unresolved flags only (default):
-curl -s "http://localhost:8080/admin/flagged" \
-  -H "Authorization: Bearer 1f970b85ec0c2ad03ff4cce906d90c3ec9ee28e58dc21868ee1658a26700c632" | jq .
+curl -s "${BASE_URL}/admin/flagged" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" | jq .
 
 # Include resolved flags too:
-# curl -s "http://localhost:8080/admin/flagged?resolved=true" \
-#   -H "Authorization: Bearer 1f970b85ec0c2ad03ff4cce906d90c3ec9ee28e58dc21868ee1658a26700c632" | jq .
+# curl -s "${BASE_URL}/admin/flagged?resolved=true" \
+#   -H "Authorization: Bearer ${ADMIN_TOKEN}" | jq .
 
 # Expected response — HTTP 200 OK:
 # [
@@ -31,4 +34,4 @@ curl -s "http://localhost:8080/admin/flagged" \
 # Empty array [] is returned when no flags match the filter.
 #
 # Error cases:
-#   401 — wrong or missing Authorization header
+#   401 — missing/invalid/expired admin JWT

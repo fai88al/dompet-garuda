@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # Lists all devices with their active offline certificates (if any).
 # Prerequisite: API server running (./mvnw spring-boot:run -Dspring-boot.run.profiles=api)
-# Replace ADMIN_API_TOKEN with the value from your .env file.
+#               ADMIN_TOKEN — JWT obtained from 13-admin-login.sh.
 
-curl -s http://localhost:8080/admin/devices \
-  -H "Authorization: Bearer 1f970b85ec0c2ad03ff4cce906d90c3ec9ee28e58dc21868ee1658a26700c632" | jq .
+BASE_URL="${BASE_URL:-http://localhost:8080}"
+ADMIN_TOKEN="<ADMIN_TOKEN>"
+
+curl -s "${BASE_URL}/admin/devices" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" | jq .
 
 # Expected response — HTTP 200 OK:
 # [
@@ -37,4 +40,4 @@ curl -s http://localhost:8080/admin/devices \
 # Empty array [] is returned when no devices exist.
 #
 # Error cases:
-#   401 — wrong or missing Authorization header
+#   401 — missing/invalid/expired admin JWT

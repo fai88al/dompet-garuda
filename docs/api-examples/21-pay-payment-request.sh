@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # FR21 — POST /device/payment-request/{requestId}/pay
 # Prerequisite: run 20-create-payment-request.sh first and capture its "requestId".
-#               Payer needs a registered, ACTIVE device (05-register-device.sh) and
-#               sufficient online balance (03-topup.sh).
+#               Payer needs a registered, ACTIVE device (02-register-device.sh) and
+#               sufficient online balance (03-top-up.sh).
 # deviceId is a plain string (CLAUDE.md §1a), not a UUID.
 
 BASE_URL="${BASE_URL:-http://localhost:8080}"

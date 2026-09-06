@@ -7,9 +7,13 @@
 # registration back and returns 503 instead of 201 (see docs/MQTT_CONTRACT.md).
 #
 # Prerequisite: run 01-create-user.sh first and copy the returned userId below.
+#               ADMIN_TOKEN — JWT obtained from 13-admin-login.sh.
 
-curl -s -X POST http://localhost:8080/admin/devices \
-  -H "Authorization: Bearer 1f970b85ec0c2ad03ff4cce906d90c3ec9ee28e58dc21868ee1658a26700c632" \
+BASE_URL="${BASE_URL:-http://localhost:8080}"
+ADMIN_TOKEN="<ADMIN_TOKEN>"
+
+curl -s -X POST "${BASE_URL}/admin/devices" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "userId": "4d5c4272-6a8a-4bab-b322-9a85d1e227e7",
@@ -35,7 +39,7 @@ curl -s -X POST http://localhost:8080/admin/devices \
 # Error cases:
 #   400 — missing/invalid field, deviceId contains '/' or '|' (FR27), or publicKey is not
 #         valid Base64 / does not decode to a well-formed X.509 Ed25519 public key
-#   401 — wrong or missing Authorization header
+#   401 — missing/invalid/expired admin JWT
 #   404 — userId not found
 #   409 — publicKey or deviceId already registered to another device
 #   422 — user already has 3 devices (maximum)

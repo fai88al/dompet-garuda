@@ -2,15 +2,18 @@
 # Lists recent sync_inbox batches, newest first (default last 50, max 200 via ?limit=N).
 # raw_payload is intentionally excluded — it may be large and contains device data.
 # Prerequisite: API server running (./mvnw spring-boot:run -Dspring-boot.run.profiles=api)
-# Replace ADMIN_API_TOKEN with the value from your .env file.
+#               ADMIN_TOKEN — JWT obtained from 13-admin-login.sh.
+
+BASE_URL="${BASE_URL:-http://localhost:8080}"
+ADMIN_TOKEN="<ADMIN_TOKEN>"
 
 # Last 50 batches (default):
-curl -s "http://localhost:8080/admin/sync" \
-  -H "Authorization: Bearer 1f970b85ec0c2ad03ff4cce906d90c3ec9ee28e58dc21868ee1658a26700c632" | jq .
+curl -s "${BASE_URL}/admin/sync" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" | jq .
 
 # Custom limit (e.g. last 10):
-# curl -s "http://localhost:8080/admin/sync?limit=10" \
-#   -H "Authorization: Bearer 1f970b85ec0c2ad03ff4cce906d90c3ec9ee28e58dc21868ee1658a26700c632" | jq .
+# curl -s "${BASE_URL}/admin/sync?limit=10" \
+#   -H "Authorization: Bearer ${ADMIN_TOKEN}" | jq .
 
 # Expected response — HTTP 200 OK:
 # [
@@ -29,4 +32,4 @@ curl -s "http://localhost:8080/admin/sync" \
 # Empty array [] is returned when no batches exist.
 #
 # Error cases:
-#   401 — wrong or missing Authorization header
+#   401 — missing/invalid/expired admin JWT

@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Gets a single user with their derived online balance and registered devices.
 # Prerequisite: API server running (./mvnw spring-boot:run -Dspring-boot.run.profiles=api)
-# Replace ADMIN_API_TOKEN and USER_ID with real values.
+#               ADMIN_TOKEN — JWT obtained from 13-admin-login.sh.
+# Replace USER_ID with a real value.
 
+BASE_URL="${BASE_URL:-http://localhost:8080}"
+ADMIN_TOKEN="<ADMIN_TOKEN>"
 USER_ID="a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 
-curl -s "http://localhost:8080/admin/users/${USER_ID}" \
-  -H "Authorization: Bearer 1f970b85ec0c2ad03ff4cce906d90c3ec9ee28e58dc21868ee1658a26700c632" | jq .
+curl -s "${BASE_URL}/admin/users/${USER_ID}" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" | jq .
 
 # Expected response — HTTP 200 OK:
 # {
@@ -27,5 +30,5 @@ curl -s "http://localhost:8080/admin/users/${USER_ID}" \
 # }
 #
 # Error cases:
-#   401 — wrong or missing Authorization header
+#   401 — missing/invalid/expired admin JWT
 #   404 — user not found

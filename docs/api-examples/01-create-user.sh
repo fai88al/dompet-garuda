@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # Creates a new user and opens their ONLINE ledger account.
 # Prerequisite: API server running (./mvnw spring-boot:run -Dspring-boot.run.profiles=api)
-# Replace ADMIN_API_TOKEN with the value from your .env file.
+#               ADMIN_TOKEN — JWT obtained from 13-admin-login.sh (admin endpoints require
+#               a Bearer JWT, not a static token — see CLAUDE.md §4/§12).
 
-curl -s -X POST http://localhost:8080/admin/users \
-  -H "Authorization: Bearer 1f970b85ec0c2ad03ff4cce906d90c3ec9ee28e58dc21868ee1658a26700c632" \
+BASE_URL="${BASE_URL:-http://localhost:8080}"
+ADMIN_TOKEN="<ADMIN_TOKEN>"
+
+curl -s -X POST "${BASE_URL}/admin/users" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "fullName": "Muhammad Rizki",
@@ -23,5 +27,5 @@ curl -s -X POST http://localhost:8080/admin/users \
 #
 # Error cases:
 #   400 — missing/invalid field (e.g. phone format)
-#   401 — wrong or missing Authorization header
+#   401 — missing/invalid/expired admin JWT
 #   409 — phone already registered

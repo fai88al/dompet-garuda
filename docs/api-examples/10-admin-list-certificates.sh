@@ -2,15 +2,18 @@
 # Lists offline certificates ordered by issued_at DESC.
 # Optional ?status= filter: ACTIVE | SETTLED | EXPIRED | REVOKED
 # Prerequisite: API server running (./mvnw spring-boot:run -Dspring-boot.run.profiles=api)
-# Replace ADMIN_API_TOKEN with the value from your .env file.
+#               ADMIN_TOKEN — JWT obtained from 13-admin-login.sh.
+
+BASE_URL="${BASE_URL:-http://localhost:8080}"
+ADMIN_TOKEN="<ADMIN_TOKEN>"
 
 # All certificates:
-curl -s "http://localhost:8080/admin/certificates" \
-  -H "Authorization: Bearer 1f970b85ec0c2ad03ff4cce906d90c3ec9ee28e58dc21868ee1658a26700c632" | jq .
+curl -s "${BASE_URL}/admin/certificates" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" | jq .
 
 # Filter by status (e.g. ACTIVE only):
-# curl -s "http://localhost:8080/admin/certificates?status=ACTIVE" \
-#   -H "Authorization: Bearer 1f970b85ec0c2ad03ff4cce906d90c3ec9ee28e58dc21868ee1658a26700c632" | jq .
+# curl -s "${BASE_URL}/admin/certificates?status=ACTIVE" \
+#   -H "Authorization: Bearer ${ADMIN_TOKEN}" | jq .
 
 # Expected response — HTTP 200 OK:
 # [
@@ -30,4 +33,4 @@ curl -s "http://localhost:8080/admin/certificates" \
 # Empty array [] is returned when no certificates match the filter.
 #
 # Error cases:
-#   401 — wrong or missing Authorization header
+#   401 — missing/invalid/expired admin JWT

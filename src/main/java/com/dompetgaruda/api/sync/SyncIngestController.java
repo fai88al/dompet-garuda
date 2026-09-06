@@ -30,7 +30,7 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 @RequestMapping("/device/sync")
 @Profile("api")
-@Tag(name = "Device", description = "Device-facing endpoints — identify the caller with a Device-Id header.")
+@Tag(name = "Sync", description = "Device-facing offline batch sync — identify the caller with a Device-Id header.")
 public class SyncIngestController {
 
     private final DeviceRepository  deviceRepository;

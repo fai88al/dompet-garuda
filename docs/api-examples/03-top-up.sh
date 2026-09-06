@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 # FR2 — Top-up a user's ONLINE balance
 # Prerequisite: run 01-create-user.sh first and substitute the returned userId below.
+#               ADMIN_TOKEN — JWT obtained from 13-admin-login.sh.
 
+BASE_URL="${BASE_URL:-http://localhost:8080}"
 USER_ID="4d5c4272-6a8a-4bab-b322-9a85d1e227e7"   # replace with actual userId from 01-create-user.sh
-ADMIN_TOKEN="1f970b85ec0c2ad03ff4cce906d90c3ec9ee28e58dc21868ee1658a26700c632"                 # replace with ADMIN_API_TOKEN from .env
-BASE_URL="http://localhost:8080"
+ADMIN_TOKEN="<ADMIN_TOKEN>"
 
-curl -s -X POST "http://localhost:8080/admin/users/4d5c4272-6a8a-4bab-b322-9a85d1e227e7/topup" \
-  -H "Authorization: Bearer 1f970b85ec0c2ad03ff4cce906d90c3ec9ee28e58dc21868ee1658a26700c632" \
+curl -s -X POST "${BASE_URL}/admin/users/${USER_ID}/topup" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "amount": 50000,
@@ -27,6 +28,6 @@ curl -s -X POST "http://localhost:8080/admin/users/4d5c4272-6a8a-4bab-b322-9a85d
 # onlineBalance=100000 on the second response.
 
 # Error cases:
-#   amount = 0 or negative → 400 Bad Request
-#   unknown userId         → 404 Not Found
-#   no/wrong Bearer token  → 401 Unauthorized
+#   amount = 0 or negative        → 400 Bad Request
+#   unknown userId                → 404 Not Found
+#   missing/invalid/expired admin JWT → 401 Unauthorized
