@@ -24,6 +24,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Integration tests for FR18/FR19 — {@code POST /device/transfer}.
  * Runs against a real Postgres container (CLAUDE.md §10).
+ *
+ * <p>Caller identity is the {@code device_id} header (plain string, CLAUDE.md §1a); the
+ * receiver is named by {@code receiverDeviceId} in the body, resolved to its owning user.
  */
 class TransferTest extends ApiIntegrationTestBase {
 
@@ -44,8 +47,9 @@ class TransferTest extends ApiIntegrationTestBase {
         topUp(senderId, 200_000L);
 
         UUID receiverId = createUser("+62839000002");
+        RegisterDeviceResponse receiverDevice = registerDevice(receiverId, "pk-transfer-001r");
 
-        TransferResponse resp = transfer(senderDevice.deviceToken(), receiverId, 50_000L, UUID.randomUUID());
+        TransferResponse resp = transfer(senderDevice.deviceId(), receiverDevice.deviceId(), 50_000L, UUID.randomUUID());
 
         assertThat(resp.transactionId()).isPositive();
         assertThat(resp.senderNewBalance()).isEqualTo(150_000L);
@@ -64,11 +68,12 @@ class TransferTest extends ApiIntegrationTestBase {
         RegisterDeviceResponse senderDevice = registerDevice(senderId, "pk-transfer-002");
         topUp(senderId, 100_000L);
         UUID receiverId = createUser("+62839000004");
+        RegisterDeviceResponse receiverDevice = registerDevice(receiverId, "pk-transfer-002r");
 
         ResponseEntity<TransferResponse> resp = rest.exchange(
                 "/device/transfer", HttpMethod.POST,
-                new HttpEntity<>(new TransferRequest(receiverId, 10_000L),
-                        deviceHeaders(senderDevice.deviceToken(), UUID.randomUUID().toString())),
+                new HttpEntity<>(new TransferRequest(receiverDevice.deviceId(), 10_000L),
+                        deviceHeaders(senderDevice.deviceId(), UUID.randomUUID().toString())),
                 TransferResponse.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -85,13 +90,15 @@ class TransferTest extends ApiIntegrationTestBase {
         UUID senderId = createUser("+62839000005");
         RegisterDeviceResponse senderDevice = registerDevice(senderId, "pk-transfer-003");
         topUp(senderId, 100_000L);
+        // A second device owned by the same user — still "yourself" at the user level.
+        RegisterDeviceResponse senderSecondDevice = registerDevice(senderId, "pk-transfer-003b");
 
         long entriesBefore = countRows("ledger_entries");
 
         ResponseEntity<String> resp = rest.exchange(
                 "/device/transfer", HttpMethod.POST,
-                new HttpEntity<>(new TransferRequest(senderId, 10_000L),
-                        deviceHeaders(senderDevice.deviceToken(), UUID.randomUUID().toString())),
+                new HttpEntity<>(new TransferRequest(senderSecondDevice.deviceId(), 10_000L),
+                        deviceHeaders(senderDevice.deviceId(), UUID.randomUUID().toString())),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -108,13 +115,14 @@ class TransferTest extends ApiIntegrationTestBase {
         RegisterDeviceResponse senderDevice = registerDevice(senderId, "pk-transfer-004");
         topUp(senderId, 10_000L);
         UUID receiverId = createUser("+62839000007");
+        RegisterDeviceResponse receiverDevice = registerDevice(receiverId, "pk-transfer-004r");
 
         long entriesBefore = countRows("ledger_entries");
 
         ResponseEntity<String> resp = rest.exchange(
                 "/device/transfer", HttpMethod.POST,
-                new HttpEntity<>(new TransferRequest(receiverId, 50_000L),
-                        deviceHeaders(senderDevice.deviceToken(), UUID.randomUUID().toString())),
+                new HttpEntity<>(new TransferRequest(receiverDevice.deviceId(), 50_000L),
+                        deviceHeaders(senderDevice.deviceId(), UUID.randomUUID().toString())),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
@@ -133,8 +141,8 @@ class TransferTest extends ApiIntegrationTestBase {
 
         ResponseEntity<String> resp = rest.exchange(
                 "/device/transfer", HttpMethod.POST,
-                new HttpEntity<>(new TransferRequest(UUID.randomUUID(), 10_000L),
-                        deviceHeaders(senderDevice.deviceToken(), UUID.randomUUID().toString())),
+                new HttpEntity<>(new TransferRequest(DeviceIdTestSupport.randomDeviceId(), 10_000L),
+                        deviceHeaders(senderDevice.deviceId(), UUID.randomUUID().toString())),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
@@ -150,11 +158,12 @@ class TransferTest extends ApiIntegrationTestBase {
         RegisterDeviceResponse senderDevice = registerDevice(senderId, "pk-transfer-006");
         topUp(senderId, MAX_AMOUNT + 1_000_000L);
         UUID receiverId = createUser("+62839000010");
+        RegisterDeviceResponse receiverDevice = registerDevice(receiverId, "pk-transfer-006r");
 
         ResponseEntity<String> resp = rest.exchange(
                 "/device/transfer", HttpMethod.POST,
-                new HttpEntity<>(new TransferRequest(receiverId, MAX_AMOUNT + 1),
-                        deviceHeaders(senderDevice.deviceToken(), UUID.randomUUID().toString())),
+                new HttpEntity<>(new TransferRequest(receiverDevice.deviceId(), MAX_AMOUNT + 1),
+                        deviceHeaders(senderDevice.deviceId(), UUID.randomUUID().toString())),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -166,11 +175,12 @@ class TransferTest extends ApiIntegrationTestBase {
         RegisterDeviceResponse senderDevice = registerDevice(senderId, "pk-transfer-007");
         topUp(senderId, 100_000L);
         UUID receiverId = createUser("+62839000012");
+        RegisterDeviceResponse receiverDevice = registerDevice(receiverId, "pk-transfer-007r");
 
         ResponseEntity<String> resp = rest.exchange(
                 "/device/transfer", HttpMethod.POST,
-                new HttpEntity<>(new TransferRequest(receiverId, 0L),
-                        deviceHeaders(senderDevice.deviceToken(), UUID.randomUUID().toString())),
+                new HttpEntity<>(new TransferRequest(receiverDevice.deviceId(), 0L),
+                        deviceHeaders(senderDevice.deviceId(), UUID.randomUUID().toString())),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -182,11 +192,12 @@ class TransferTest extends ApiIntegrationTestBase {
         RegisterDeviceResponse senderDevice = registerDevice(senderId, "pk-transfer-008");
         topUp(senderId, 100_000L);
         UUID receiverId = createUser("+62839000014");
+        RegisterDeviceResponse receiverDevice = registerDevice(receiverId, "pk-transfer-008r");
 
         ResponseEntity<String> resp = rest.exchange(
                 "/device/transfer", HttpMethod.POST,
-                new HttpEntity<>(new TransferRequest(receiverId, -1_000L),
-                        deviceHeaders(senderDevice.deviceToken(), UUID.randomUUID().toString())),
+                new HttpEntity<>(new TransferRequest(receiverDevice.deviceId(), -1_000L),
+                        deviceHeaders(senderDevice.deviceId(), UUID.randomUUID().toString())),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -202,14 +213,15 @@ class TransferTest extends ApiIntegrationTestBase {
         RegisterDeviceResponse senderDevice = registerDevice(senderId, "pk-transfer-009");
         topUp(senderId, 100_000L);
         UUID receiverId = createUser("+62839000016");
+        RegisterDeviceResponse receiverDevice = registerDevice(receiverId, "pk-transfer-009r");
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.setBearerAuth(senderDevice.deviceToken());
+        headers.set("device_id", senderDevice.deviceId());
 
         ResponseEntity<String> resp = rest.exchange(
                 "/device/transfer", HttpMethod.POST,
-                new HttpEntity<>(new TransferRequest(receiverId, 10_000L), headers),
+                new HttpEntity<>(new TransferRequest(receiverDevice.deviceId(), 10_000L), headers),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -225,12 +237,13 @@ class TransferTest extends ApiIntegrationTestBase {
         RegisterDeviceResponse senderDevice = registerDevice(senderId, "pk-transfer-010");
         topUp(senderId, 200_000L);
         UUID receiverId = createUser("+62839000018");
+        RegisterDeviceResponse receiverDevice = registerDevice(receiverId, "pk-transfer-010r");
         UUID idempotencyKey = UUID.randomUUID();
 
-        TransferResponse first = transfer(senderDevice.deviceToken(), receiverId, 50_000L, idempotencyKey);
+        TransferResponse first = transfer(senderDevice.deviceId(), receiverDevice.deviceId(), 50_000L, idempotencyKey);
         long entriesAfterFirst = countRows("ledger_entries");
 
-        TransferResponse second = transfer(senderDevice.deviceToken(), receiverId, 50_000L, idempotencyKey);
+        TransferResponse second = transfer(senderDevice.deviceId(), receiverDevice.deviceId(), 50_000L, idempotencyKey);
 
         assertThat(second.transactionId()).isEqualTo(first.transactionId());
         assertThat(second.senderNewBalance()).isEqualTo(first.senderNewBalance());
@@ -246,9 +259,10 @@ class TransferTest extends ApiIntegrationTestBase {
         RegisterDeviceResponse senderDevice = registerDevice(senderId, "pk-transfer-011");
         topUp(senderId, 300_000L);
         UUID receiverId = createUser("+62839000020");
+        RegisterDeviceResponse receiverDevice = registerDevice(receiverId, "pk-transfer-011r");
 
-        TransferResponse first = transfer(senderDevice.deviceToken(), receiverId, 50_000L, UUID.randomUUID());
-        TransferResponse second = transfer(senderDevice.deviceToken(), receiverId, 50_000L, UUID.randomUUID());
+        TransferResponse first = transfer(senderDevice.deviceId(), receiverDevice.deviceId(), 50_000L, UUID.randomUUID());
+        TransferResponse second = transfer(senderDevice.deviceId(), receiverDevice.deviceId(), 50_000L, UUID.randomUUID());
 
         assertThat(second.transactionId()).isNotEqualTo(first.transactionId());
         assertThat(second.senderNewBalance()).isEqualTo(first.senderNewBalance() - 50_000L);
@@ -260,8 +274,9 @@ class TransferTest extends ApiIntegrationTestBase {
     // -------------------------------------------------------------------------
 
     @Test
-    void transfer_missingToken_returns401() {
+    void transfer_missingDeviceId_returns401() {
         UUID receiverId = createUser("+62839000021");
+        RegisterDeviceResponse receiverDevice = registerDevice(receiverId, "pk-transfer-012r");
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -269,20 +284,21 @@ class TransferTest extends ApiIntegrationTestBase {
 
         ResponseEntity<String> resp = rest.exchange(
                 "/device/transfer", HttpMethod.POST,
-                new HttpEntity<>(new TransferRequest(receiverId, 10_000L), headers),
+                new HttpEntity<>(new TransferRequest(receiverDevice.deviceId(), 10_000L), headers),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     @Test
-    void transfer_invalidToken_returns401() {
+    void transfer_unknownDeviceId_returns401() {
         UUID receiverId = createUser("+62839000022");
+        RegisterDeviceResponse receiverDevice = registerDevice(receiverId, "pk-transfer-013r");
 
         ResponseEntity<String> resp = rest.exchange(
                 "/device/transfer", HttpMethod.POST,
-                new HttpEntity<>(new TransferRequest(receiverId, 10_000L),
-                        deviceHeaders("a".repeat(64), UUID.randomUUID().toString())),
+                new HttpEntity<>(new TransferRequest(receiverDevice.deviceId(), 10_000L),
+                        deviceHeaders(DeviceIdTestSupport.randomDeviceId(), UUID.randomUUID().toString())),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
@@ -310,11 +326,11 @@ class TransferTest extends ApiIntegrationTestBase {
                 TopUpResponse.class);
     }
 
-    private TransferResponse transfer(String deviceToken, UUID receiverUserId, long amount, UUID idempotencyKey) {
+    private TransferResponse transfer(String deviceId, String receiverDeviceId, long amount, UUID idempotencyKey) {
         ResponseEntity<TransferResponse> resp = rest.exchange(
                 "/device/transfer", HttpMethod.POST,
-                new HttpEntity<>(new TransferRequest(receiverUserId, amount),
-                        deviceHeaders(deviceToken, idempotencyKey.toString())),
+                new HttpEntity<>(new TransferRequest(receiverDeviceId, amount),
+                        deviceHeaders(deviceId, idempotencyKey.toString())),
                 TransferResponse.class);
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
         return resp.getBody();
@@ -331,10 +347,10 @@ class TransferTest extends ApiIntegrationTestBase {
         return resp.getBody();
     }
 
-    private HttpHeaders deviceHeaders(String token, String idempotencyKey) {
+    private HttpHeaders deviceHeaders(String deviceId, String idempotencyKey) {
         HttpHeaders h = new HttpHeaders();
         h.setContentType(MediaType.APPLICATION_JSON);
-        h.setBearerAuth(token);
+        h.set("device_id", deviceId);
         h.set("Idempotency-Key", idempotencyKey);
         return h;
     }

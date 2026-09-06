@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# FR18/FR19: online transfer to another user's balance.
 #
 # Prerequisites:
 #   - API running (./mvnw spring-boot:run -Dspring-boot.run.profiles=api)

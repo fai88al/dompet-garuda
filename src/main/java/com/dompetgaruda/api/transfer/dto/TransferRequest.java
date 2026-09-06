@@ -2,8 +2,6 @@ package com.dompetgaruda.api.transfer.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
-import java.util.UUID;
-
 /**
  * Request body for {@code POST /device/transfer}.
  *
@@ -13,11 +11,11 @@ import java.util.UUID;
  * priority over every other check. {@link com.dompetgaruda.api.transfer.TransferService}
  * validates these fields manually, after the replay check.
  */
-@Schema(description = "Request to transfer funds from the authenticated device's user to another user's online balance.")
+@Schema(description = "Request to transfer funds from the authenticated device's user to another registered device's user.")
 public record TransferRequest(
 
-        @Schema(description = "Recipient user id.", example = "3b1f3c2a-0000-0000-0000-000000000000", requiredMode = Schema.RequiredMode.REQUIRED)
-        UUID receiverUserId,
+        @Schema(description = "Recipient device id. Plain string, hardware-sourced (CLAUDE.md §1a) — not a UUID.", example = "AABBCCDDEEFF", requiredMode = Schema.RequiredMode.REQUIRED)
+        String receiverDeviceId,
 
         @Schema(description = "Amount to transfer in whole Rupiah (IDR). Must be > 0 and <= transfer.online.max-amount-idr.", example = "50000", requiredMode = Schema.RequiredMode.REQUIRED)
         Long amount

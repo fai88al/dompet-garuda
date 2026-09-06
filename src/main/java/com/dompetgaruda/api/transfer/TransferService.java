@@ -1,7 +1,7 @@
 package com.dompetgaruda.api.transfer;
 
 import com.dompetgaruda.api.common.entity.Device;
-import com.dompetgaruda.api.common.repository.UserRepository;
+import com.dompetgaruda.api.common.repository.DeviceRepository;
 import com.dompetgaruda.api.ledger.LedgerEntry;
 import com.dompetgaruda.api.ledger.LedgerPostingService;
 import com.dompetgaruda.api.ledger.PostingRequest;
@@ -11,7 +11,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -32,7 +31,7 @@ import java.util.UUID;
  * generates the key, and a duplicate replays the stored response verbatim without
  * reprocessing.
  *
- * <p>Validation order (CLAUDE.md §14.1) — steps a/b (device token, header format) run in
+ * <p>Validation order (CLAUDE.md §14.1) — steps a/b (device_id lookup, header format) run in
  * {@link TransferController}; this class runs c through g, all inside one
  * {@code @Transactional} method so a rejection at any step leaves zero rows written.
  */
@@ -43,19 +42,19 @@ public class TransferService {
     private static final String ENDPOINT = "device/transfer";
 
     private final LedgerPostingService ledger;
-    private final UserRepository userRepository;
+    private final DeviceRepository deviceRepository;
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
     private final long maxAmountIdr;
 
     public TransferService(
             LedgerPostingService ledger,
-            UserRepository userRepository,
+            DeviceRepository deviceRepository,
             JdbcTemplate jdbc,
             ObjectMapper objectMapper,
             @Value("${transfer.online.max-amount-idr}") long maxAmountIdr) {
         this.ledger = ledger;
-        this.userRepository = userRepository;
+        this.deviceRepository = deviceRepository;
         this.jdbc = jdbc;
         this.objectMapper = objectMapper;
         this.maxAmountIdr = maxAmountIdr;
@@ -69,13 +68,16 @@ public class TransferService {
             return new TransferOutcome(200, replay.get(), null, false);
         }
 
-        // d) receiver exists
-        if (req.receiverUserId() == null || !userRepository.existsById(req.receiverUserId())) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Receiver user not found");
+        // d) receiver device exists
+        if (req.receiverDeviceId() == null || req.receiverDeviceId().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Receiver device not found");
         }
+        Device receiverDevice = deviceRepository.findById(req.receiverDeviceId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Receiver device not found"));
+        UUID receiverUserId = receiverDevice.getUserId();
 
-        // e) not a self-transfer
-        if (req.receiverUserId().equals(device.getUserId())) {
+        // e) not a self-transfer (same owning user, regardless of which of their devices sent it)
+        if (receiverUserId.equals(device.getUserId())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot transfer to yourself");
         }
 
@@ -94,13 +96,13 @@ public class TransferService {
                     "Insufficient online balance: available=" + senderBalance + ", requested=" + amount);
         }
 
-        UUID receiverAccount = ledger.resolveOnlineAccount(req.receiverUserId());
+        UUID receiverAccount = ledger.resolveOnlineAccount(receiverUserId);
 
         long transactionId = ledger.post(new PostingRequest(
                 "ONLINE_TRANSFER",
                 "USER",
-                req.receiverUserId().toString(),
-                "Online transfer to " + req.receiverUserId(),
+                receiverUserId.toString(),
+                "Online transfer to " + receiverUserId,
                 List.of(
                         new LedgerEntry(senderAccount, "DEBIT", amount),
                         new LedgerEntry(receiverAccount, "CREDIT", amount)
@@ -110,8 +112,7 @@ public class TransferService {
         TransferResponse response = new TransferResponse(transactionId, senderBalance - amount);
         storeIdempotencyKey(device.getDeviceId(), idempotencyKey, transactionId, response);
 
-        String receiverDeviceId = findReceiverDeviceId(req.receiverUserId()).orElse(null);
-        return new TransferOutcome(200, response, receiverDeviceId, true);
+        return new TransferOutcome(200, response, req.receiverDeviceId(), true);
     }
 
     private Optional<TransferResponse> findReplay(String deviceId, UUID idempotencyKey) {
@@ -140,19 +141,6 @@ public class TransferService {
             // double-post occurs. The retried request will find the winner's row on its
             // own replay check.
             throw e;
-        }
-    }
-
-    private Optional<String> findReceiverDeviceId(UUID receiverUserId) {
-        try {
-            String deviceId = jdbc.queryForObject(
-                    "SELECT device_id FROM devices WHERE user_id = ? AND status = 'ACTIVE' " +
-                    "ORDER BY registered_at LIMIT 1",
-                    String.class,
-                    receiverUserId);
-            return Optional.ofNullable(deviceId);
-        } catch (EmptyResultDataAccessException e) {
-            return Optional.empty();
         }
     }
 
