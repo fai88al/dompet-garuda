@@ -217,7 +217,7 @@ class TransferTest extends ApiIntegrationTestBase {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        headers.set("device_id", senderDevice.deviceId());
+        headers.set("Device-Id", senderDevice.deviceId());
 
         ResponseEntity<String> resp = rest.exchange(
                 "/device/transfer", HttpMethod.POST,
@@ -350,7 +350,7 @@ class TransferTest extends ApiIntegrationTestBase {
     private HttpHeaders deviceHeaders(String deviceId, String idempotencyKey) {
         HttpHeaders h = new HttpHeaders();
         h.setContentType(MediaType.APPLICATION_JSON);
-        h.set("device_id", deviceId);
+        h.set("Device-Id", deviceId);
         h.set("Idempotency-Key", idempotencyKey);
         return h;
     }
