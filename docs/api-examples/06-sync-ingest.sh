@@ -5,17 +5,18 @@
 # certificate. The certificateId is returned by that call.
 #
 # Variables to fill in:
-#   DEVICE_TOKEN   — deviceToken returned by 02-register-device.sh
+#   DEVICE_ID      — deviceId of the uploading (sender) device, plain string (CLAUDE.md §1a),
+#                    from 02-register-device.sh
 #   CERTIFICATE_ID — certificateId returned by 05-pouch-load.sh
 #   RECEIVER_ID    — deviceId of the receiving device (from 02-register-device.sh)
 
-DEVICE_TOKEN="b6046943e494e658d5ec81ecc8e5458a2895ad7962ae43cee5e561553fc7135a"
+DEVICE_ID="A1B2C3D4E5F6"
 CERTIFICATE_ID="f47ac10b-58cc-4372-a567-0e02b2c3d479"
 RECEIVER_ID="C3D4E5F6A7B8"
 BASE_URL="http://localhost:8080"
 
 curl -s -X POST "$BASE_URL/device/sync" \
-  -H "Authorization: Bearer $DEVICE_TOKEN" \
+  -H "Device-Id: $DEVICE_ID" \
   -H "Content-Type: application/json" \
   -d "{
     \"certificateId\": \"$CERTIFICATE_ID\",
@@ -62,6 +63,6 @@ curl -s -X POST "$BASE_URL/device/sync" \
 #     UNIQUE(sender_device_id, counter) in offline_transactions.
 #
 # Error cases:
-#   malformed JSON body        → 400 Bad Request
-#   missing certificateId      → 400 Bad Request
-#   no/wrong device token      → 401 Unauthorized
+#   malformed JSON body            → 400 Bad Request
+#   missing certificateId          → 400 Bad Request
+#   missing/unknown Device-Id      → 401 Unauthorized

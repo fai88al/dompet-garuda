@@ -39,8 +39,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>Duplicate upload: same payload twice creates two distinct rows (idempotency is
  *       the worker's responsibility, not the ingest endpoint's).</li>
  *   <li>Malformed JSON body returns 400.</li>
- *   <li>Missing device token returns 401.</li>
- *   <li>Wrong device token returns 401.</li>
+ *   <li>Missing Device-Id header returns 401.</li>
+ *   <li>Unknown Device-Id returns 401.</li>
  * </ol>
  */
 class SyncIngestTest extends ApiIntegrationTestBase {
@@ -59,7 +59,7 @@ class SyncIngestTest extends ApiIntegrationTestBase {
         SyncBatchResponse resp = devicePost(
                 "/device/sync",
                 minimalBatch(reg),
-                reg.deviceToken(),
+                reg.deviceId(),
                 SyncBatchResponse.class);
 
         assertThat(resp.batchId()).isNotNull();
@@ -73,7 +73,7 @@ class SyncIngestTest extends ApiIntegrationTestBase {
         SyncBatchResponse resp = devicePost(
                 "/device/sync",
                 minimalBatch(reg),
-                reg.deviceToken(),
+                reg.deviceId(),
                 SyncBatchResponse.class);
 
         Integer count = jdbc.queryForObject(
@@ -94,7 +94,7 @@ class SyncIngestTest extends ApiIntegrationTestBase {
         long entriesBefore = countRows("ledger_entries");
         long txnsBefore    = countRows("ledger_transactions");
 
-        devicePost("/device/sync", minimalBatch(reg), reg.deviceToken(), SyncBatchResponse.class);
+        devicePost("/device/sync", minimalBatch(reg), reg.deviceId(), SyncBatchResponse.class);
 
         assertThat(countRows("ledger_entries"))
                 .as("ledger_entries must not change during sync ingest (§7 rule 5)")
@@ -137,7 +137,7 @@ class SyncIngestTest extends ApiIntegrationTestBase {
         ResponseEntity<SyncBatchResponse> resp = rest.exchange(
                 "/device/sync",
                 HttpMethod.POST,
-                new HttpEntity<>(batch, deviceJsonHeaders(reg.deviceToken())),
+                new HttpEntity<>(batch, deviceIdHeaders(reg.deviceId())),
                 SyncBatchResponse.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
@@ -163,7 +163,7 @@ class SyncIngestTest extends ApiIntegrationTestBase {
         ResponseEntity<SyncBatchResponse> resp = rest.exchange(
                 "/device/sync",
                 HttpMethod.POST,
-                new HttpEntity<>(batch, deviceJsonHeaders(reg.deviceToken())),
+                new HttpEntity<>(batch, deviceIdHeaders(reg.deviceId())),
                 SyncBatchResponse.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
@@ -183,8 +183,8 @@ class SyncIngestTest extends ApiIntegrationTestBase {
         RegisterDeviceResponse reg = setupDeviceWithPouch("+62841000006", "pk-sync-006");
         String batch = minimalBatch(reg);
 
-        SyncBatchResponse first  = devicePost("/device/sync", batch, reg.deviceToken(), SyncBatchResponse.class);
-        SyncBatchResponse second = devicePost("/device/sync", batch, reg.deviceToken(), SyncBatchResponse.class);
+        SyncBatchResponse first  = devicePost("/device/sync", batch, reg.deviceId(), SyncBatchResponse.class);
+        SyncBatchResponse second = devicePost("/device/sync", batch, reg.deviceId(), SyncBatchResponse.class);
 
         assertThat(first.batchId()).isNotEqualTo(second.batchId());
 
@@ -202,7 +202,7 @@ class SyncIngestTest extends ApiIntegrationTestBase {
     void syncIngest_malformedJson_returns400() {
         RegisterDeviceResponse reg = setupDeviceWithPouch("+62841000007", "pk-sync-007");
 
-        HttpHeaders headers = deviceJsonHeaders(reg.deviceToken());
+        HttpHeaders headers = deviceIdHeaders(reg.deviceId());
         ResponseEntity<String> resp = rest.exchange(
                 "/device/sync",
                 HttpMethod.POST,
@@ -225,7 +225,7 @@ class SyncIngestTest extends ApiIntegrationTestBase {
         ResponseEntity<String> resp = rest.exchange(
                 "/device/sync",
                 HttpMethod.POST,
-                new HttpEntity<>(body, deviceJsonHeaders(reg.deviceToken())),
+                new HttpEntity<>(body, deviceIdHeaders(reg.deviceId())),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -236,7 +236,7 @@ class SyncIngestTest extends ApiIntegrationTestBase {
     // -------------------------------------------------------------------------
 
     @Test
-    void syncIngest_missingToken_returns401() {
+    void syncIngest_missingDeviceIdHeader_returns401() {
         RegisterDeviceResponse reg = setupDeviceWithPouch("+62841000009", "pk-sync-009");
 
         ResponseEntity<String> resp = rest.postForEntity(
@@ -248,13 +248,13 @@ class SyncIngestTest extends ApiIntegrationTestBase {
     }
 
     @Test
-    void syncIngest_wrongToken_returns401() {
+    void syncIngest_unknownDeviceId_returns401() {
         RegisterDeviceResponse reg = setupDeviceWithPouch("+62841000010", "pk-sync-010");
 
         ResponseEntity<String> resp = rest.exchange(
                 "/device/sync",
                 HttpMethod.POST,
-                new HttpEntity<>(minimalBatch(reg), deviceJsonHeaders("a".repeat(64))),
+                new HttpEntity<>(minimalBatch(reg), deviceIdHeaders("does-not-exist")),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
@@ -343,11 +343,11 @@ class SyncIngestTest extends ApiIntegrationTestBase {
         return resp.getBody();
     }
 
-    private <T> T devicePost(String path, String body, String token, Class<T> responseType) {
+    private <T> T devicePost(String path, String body, String deviceId, Class<T> responseType) {
         ResponseEntity<T> resp = rest.exchange(
                 path,
                 HttpMethod.POST,
-                new HttpEntity<>(body, deviceJsonHeaders(token)),
+                new HttpEntity<>(body, deviceIdHeaders(deviceId)),
                 responseType);
         assertThat(resp.getStatusCode().is2xxSuccessful())
                 .as("Expected 2xx from %s but got %s", path, resp.getStatusCode())
@@ -366,6 +366,15 @@ class SyncIngestTest extends ApiIntegrationTestBase {
         HttpHeaders h = new HttpHeaders();
         h.setContentType(MediaType.APPLICATION_JSON);
         h.setBearerAuth(token);
+        return h;
+    }
+
+    private HttpHeaders deviceIdHeaders(String deviceId) {
+        HttpHeaders h = new HttpHeaders();
+        h.setContentType(MediaType.APPLICATION_JSON);
+        if (deviceId != null) {
+            h.set("Device-Id", deviceId);
+        }
         return h;
     }
 

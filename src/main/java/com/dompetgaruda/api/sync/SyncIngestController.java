@@ -1,16 +1,16 @@
 package com.dompetgaruda.api.sync;
 
-import com.dompetgaruda.api.auth.DeviceTokenVerifier;
 import com.dompetgaruda.api.common.entity.Device;
+import com.dompetgaruda.api.common.repository.DeviceRepository;
 import com.dompetgaruda.api.sync.dto.SyncBatchRequest;
 import com.dompetgaruda.api.sync.dto.SyncBatchResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.context.annotation.Profile;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -30,15 +30,15 @@ import org.springframework.web.server.ResponseStatusException;
 @RestController
 @RequestMapping("/device/sync")
 @Profile("api")
-@Tag(name = "Device", description = "Device-facing endpoints — authenticate with a device Bearer token.")
+@Tag(name = "Device", description = "Device-facing endpoints — identify the caller with a Device-Id header.")
 public class SyncIngestController {
 
-    private final DeviceTokenVerifier verifier;
-    private final SyncIngestService   syncIngestService;
+    private final DeviceRepository  deviceRepository;
+    private final SyncIngestService syncIngestService;
 
-    public SyncIngestController(DeviceTokenVerifier verifier,
+    public SyncIngestController(DeviceRepository deviceRepository,
                                 SyncIngestService syncIngestService) {
-        this.verifier          = verifier;
+        this.deviceRepository  = deviceRepository;
         this.syncIngestService = syncIngestService;
     }
 
@@ -58,22 +58,23 @@ public class SyncIngestController {
             @ApiResponse(responseCode = "400",
                     description = "Malformed JSON body or missing required fields (certificateId, transactions)."),
             @ApiResponse(responseCode = "401",
-                    description = "Missing or invalid device Bearer token.")
+                    description = "Missing Device-Id header, or device not registered/not ACTIVE.")
     })
     public SyncBatchResponse ingest(
-            @RequestHeader(name = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
+            @Parameter(description = "Uploading device's id (CLAUDE.md §1a). Required — identifies the device and its owning user.", required = true)
+            @RequestHeader(name = "Device-Id", required = false) String deviceId,
             @Valid @RequestBody SyncBatchRequest request) {
-        Device device = resolveDevice(authHeader);
+        Device device = resolveDevice(deviceId);
         return syncIngestService.ingest(device, request);
     }
 
-    private Device resolveDevice(String authHeader) {
-        String rawToken = null;
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            rawToken = authHeader.substring(7).strip();
+    private Device resolveDevice(String deviceId) {
+        if (deviceId == null || deviceId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing Device-Id header");
         }
-        return verifier.verify(rawToken)
+        return deviceRepository.findById(deviceId)
+                .filter(d -> "ACTIVE".equals(d.getStatus()))
                 .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.UNAUTHORIZED, "Invalid device token"));
+                        HttpStatus.UNAUTHORIZED, "Invalid Device-Id"));
     }
 }
