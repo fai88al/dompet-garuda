@@ -1,7 +1,5 @@
 api.dompetgaruda.com {
-	reverse_proxy api:8080 {
-		header_up device_id {http.request.header.device_id}
-	}
+	reverse_proxy api:8080
 }
 
 mqtt.dompetgaruda.com {
