@@ -90,14 +90,21 @@ public class MqttPublisherService {
      * Publishes a payment-received notification to {@code wallet/{deviceId}/payment-received}
      * (CLAUDE.md §8). Notification only — never trust this as proof of settlement; the ledger
      * is authoritative. Called by the API immediately after an ONLINE_TRANSFER or
-     * QR_PAYMENT_ONLINE commits, unlike the other publish methods here which are worker-only.
+     * QR_PAYMENT_ONLINE commits, and by {@code SyncSettlementService} after an OFFLINE_TRANSFER
+     * commits (Phase 3 Feature A, CLAUDE.md §17), unlike the other publish methods here which
+     * are worker-only.
+     *
+     * @return {@code true} if the message was actually handed to the broker (client connected,
+     *         no exception); {@code false} otherwise. Callers use this to decide whether a
+     *         notification was "DELIVERED" for reconciliation purposes — it is still only a
+     *         best-effort signal, never proof the device received it.
      */
-    public void publishPaymentReceived(String deviceId, long transactionId) {
+    public boolean publishPaymentReceived(String deviceId, long transactionId) {
         try {
             if (!client.isConnected()) {
                 log.warn("MQTT not connected — skipping payment-received publish for device {} txn {}",
                         deviceId, transactionId);
-                return;
+                return false;
             }
             String topic = "wallet/" + deviceId + "/payment-received";
             Map<String, Object> payload = new LinkedHashMap<>();
@@ -107,9 +114,11 @@ public class MqttPublisherService {
             msg.setRetained(false);
             client.publish(topic, msg);
             log.debug("Published payment-received for device {} txn {}", deviceId, transactionId);
+            return true;
         } catch (Exception e) {
             log.warn("Failed to publish payment-received for device {} txn {}: {}",
                     deviceId, transactionId, e.getMessage());
+            return false;
         }
     }
 }

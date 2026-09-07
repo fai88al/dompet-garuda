@@ -153,6 +153,43 @@ public class MqttAdminClient {
         log.info("Reinstated MQTT access for device {}", deviceId);
     }
 
+    /**
+     * Best-effort re-publish of a {@code wallet/{deviceId}/payment-received} notification from
+     * the api profile (Phase 3 Feature A reconciliation-on-reconnect, CLAUDE.md §17 point 4).
+     * Mirrors {@link MqttPublisherService#publishPaymentReceived} exactly, but on THIS
+     * connection — the worker's publisher bean does not exist in the api profile.
+     *
+     * <p><b>Unverified assumption:</b> this reuses the {@code dompet-api-admin} dynsec
+     * connection, which exists to send {@code $CONTROL/dynamic-security/v1} commands, not to
+     * publish on {@code wallet/#}. Whether the {@code admin} role's ACL on the production
+     * broker actually permits publishing there has not been confirmed — if it doesn't, this
+     * silently no-ops (logged) on every call. That is safe (never fails the caller's request,
+     * never touches the ledger), but it does mean reconciliation delivery may be a no-op in
+     * production until this is verified against the real broker's dynsec role config.
+     */
+    public boolean publishPaymentReceivedBestEffort(String deviceId, long transactionId) {
+        try {
+            if (!client.isConnected()) {
+                log.warn("MQTT not connected — skipping payment-received re-publish for device {} txn {}",
+                        deviceId, transactionId);
+                return false;
+            }
+            String topic = "wallet/" + deviceId + "/payment-received";
+            ObjectNode payload = objectMapper.createObjectNode();
+            payload.put("transactionId", transactionId);
+            MqttMessage msg = new MqttMessage(objectMapper.writeValueAsBytes(payload));
+            msg.setQos(1);
+            msg.setRetained(false);
+            client.publish(topic, msg);
+            log.debug("Re-published payment-received for device {} txn {}", deviceId, transactionId);
+            return true;
+        } catch (Exception e) {
+            log.warn("Failed to re-publish payment-received for device {} txn {}: {}",
+                    deviceId, transactionId, e.getMessage());
+            return false;
+        }
+    }
+
     private record Command(String name, Map<String, String> params) {}
 
     /**

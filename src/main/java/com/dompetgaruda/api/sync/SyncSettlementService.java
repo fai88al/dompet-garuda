@@ -5,6 +5,7 @@ import com.dompetgaruda.api.ledger.LedgerEntry;
 import com.dompetgaruda.api.ledger.LedgerPostingService;
 import com.dompetgaruda.api.ledger.PostingRequest;
 import com.dompetgaruda.api.mqtt.MqttPublisherService;
+import com.dompetgaruda.api.notification.NotificationReconciliationService;
 import com.dompetgaruda.api.sync.dto.SyncBatchRequest;
 import com.dompetgaruda.api.sync.dto.SyncOfflineTxnRequest;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -55,18 +56,20 @@ public class SyncSettlementService {
     private final LedgerPostingService ledger;
     private final Ed25519Verifier verifier;
     private final ObjectMapper objectMapper;
+    private final NotificationReconciliationService notificationService;
     // Null in the api profile — MqttPublisherService is @Profile("worker") only
     @Autowired(required = false)
     private MqttPublisherService mqttPublisher;
 
     public SyncSettlementService(JdbcTemplate jdbc, PlatformTransactionManager txManager,
                                   LedgerPostingService ledger, Ed25519Verifier verifier,
-                                  ObjectMapper objectMapper) {
+                                  ObjectMapper objectMapper, NotificationReconciliationService notificationService) {
         this.jdbc         = jdbc;
         this.tx           = new TransactionTemplate(txManager);
         this.ledger       = ledger;
         this.verifier     = verifier;
         this.objectMapper = objectMapper;
+        this.notificationService = notificationService;
     }
 
     /**
@@ -258,8 +261,8 @@ public class SyncSettlementService {
         UUID receiverOnlineAccountId = resolveUserOnlineAccountForDevice(txn.receiverDeviceId());
 
         // Post OFFLINE_TRANSFER + insert offline_transactions + update last_counter — ONE DB TX (§7.2)
-        tx.executeWithoutResult(txStatus -> {
-            ledger.post(new PostingRequest(
+        long transactionId = tx.execute(txStatus -> {
+            long txnId = ledger.post(new PostingRequest(
                     "OFFLINE_TRANSFER",
                     "OFFLINE_TXN",
                     txn.offlineTxnId().toString(),
@@ -289,7 +292,15 @@ public class SyncSettlementService {
             jdbc.update(
                     "UPDATE devices SET last_counter = ?, updated_at = now() WHERE device_id = ?",
                     txn.counter(), senderDeviceId);
+
+            return txnId;
         });
+
+        // Phase 3 Feature A (CLAUDE.md §17 point 3) — fire-and-forget, must not throw and must
+        // never gate settlement outcome (§7 invariant 8: MQTT/notifications carry no financial
+        // authority). Deliberately outside the DB tx above: a notification-log write failure
+        // must never roll back a committed OFFLINE_TRANSFER.
+        notificationService.recordAndNotify(txn.offlineTxnId(), txn.receiverDeviceId(), transactionId);
 
         return true;
     }

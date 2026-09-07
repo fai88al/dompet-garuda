@@ -2,6 +2,7 @@ package com.dompetgaruda.api.sync;
 
 import com.dompetgaruda.api.common.entity.Device;
 import com.dompetgaruda.api.common.repository.DeviceRepository;
+import com.dompetgaruda.api.notification.NotificationReconciliationService;
 import com.dompetgaruda.api.sync.dto.SyncBatchRequest;
 import com.dompetgaruda.api.sync.dto.SyncBatchResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -35,11 +36,14 @@ public class SyncIngestController {
 
     private final DeviceRepository  deviceRepository;
     private final SyncIngestService syncIngestService;
+    private final NotificationReconciliationService notificationService;
 
     public SyncIngestController(DeviceRepository deviceRepository,
-                                SyncIngestService syncIngestService) {
+                                SyncIngestService syncIngestService,
+                                NotificationReconciliationService notificationService) {
         this.deviceRepository  = deviceRepository;
         this.syncIngestService = syncIngestService;
+        this.notificationService = notificationService;
     }
 
     @PostMapping
@@ -65,6 +69,10 @@ public class SyncIngestController {
             @RequestHeader(name = "Device-Id", required = false) String deviceId,
             @Valid @RequestBody SyncBatchRequest request) {
         Device device = resolveDevice(deviceId);
+        // Phase 3 Feature A (CLAUDE.md §17 point 4) — reconciliation piggybacks on this
+        // authenticated hit rather than a new "I'm online now" endpoint. Best-effort, never
+        // throws, never affects this response.
+        notificationService.reconcileForDevice(device.getDeviceId());
         return syncIngestService.ingest(device, request);
     }
 

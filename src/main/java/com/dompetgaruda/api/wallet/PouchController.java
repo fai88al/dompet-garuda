@@ -3,6 +3,7 @@ package com.dompetgaruda.api.wallet;
 import com.dompetgaruda.api.auth.DeviceTokenVerifier;
 import com.dompetgaruda.api.common.entity.Device;
 import com.dompetgaruda.api.mqtt.MqttPublisherService;
+import com.dompetgaruda.api.notification.NotificationReconciliationService;
 import com.dompetgaruda.api.wallet.dto.PouchLoadRequest;
 import com.dompetgaruda.api.wallet.dto.PouchLoadResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,13 +35,16 @@ public class PouchController {
 
     private final DeviceTokenVerifier verifier;
     private final PouchService        pouchService;
+    private final NotificationReconciliationService notificationService;
     // Null in the api profile (MqttPublisherService is @Profile("worker")); optional cert-refresh hint
     @Autowired(required = false)
     private MqttPublisherService mqttPublisher;
 
-    public PouchController(DeviceTokenVerifier verifier, PouchService pouchService) {
+    public PouchController(DeviceTokenVerifier verifier, PouchService pouchService,
+                            NotificationReconciliationService notificationService) {
         this.verifier     = verifier;
         this.pouchService = pouchService;
+        this.notificationService = notificationService;
     }
 
     @PostMapping("/load")
@@ -61,6 +65,10 @@ public class PouchController {
             @RequestHeader(name = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
             @Valid @RequestBody PouchLoadRequest request) {
         Device device = resolveDevice(authHeader);
+        // Phase 3 Feature A (CLAUDE.md §17 point 4) — reconciliation piggybacks on this
+        // authenticated hit rather than a new "I'm online now" endpoint. Best-effort, never
+        // throws, never affects this response.
+        notificationService.reconcileForDevice(device.getDeviceId());
         PouchLoadResponse response = pouchService.load(device, request);
         // @Transactional load() has committed; send cert-refresh hint (fire-and-forget, §7.8)
         if (mqttPublisher != null) {
