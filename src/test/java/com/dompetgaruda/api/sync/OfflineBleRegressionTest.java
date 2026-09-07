@@ -95,7 +95,7 @@ class OfflineBleRegressionTest extends ApiIntegrationTestBase {
         ResponseEntity<com.dompetgaruda.api.sync.dto.SyncBatchResponse> syncResp = rest.exchange(
                 "/device/sync",
                 HttpMethod.POST,
-                new HttpEntity<>(batchJson, deviceJsonHeaders(sender.deviceToken())),
+                new HttpEntity<>(batchJson, deviceIdHeaders(sender.deviceId())),
                 com.dompetgaruda.api.sync.dto.SyncBatchResponse.class);
         assertThat(syncResp.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
         UUID batchId = syncResp.getBody().batchId();
@@ -185,6 +185,13 @@ class OfflineBleRegressionTest extends ApiIntegrationTestBase {
         HttpHeaders h = new HttpHeaders();
         h.setContentType(MediaType.APPLICATION_JSON);
         h.setBearerAuth(token);
+        return h;
+    }
+
+    private HttpHeaders deviceIdHeaders(String deviceId) {
+        HttpHeaders h = new HttpHeaders();
+        h.setContentType(MediaType.APPLICATION_JSON);
+        h.set("Device-Id", deviceId);
         return h;
     }
 
