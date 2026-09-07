@@ -14,81 +14,51 @@ device-held "offline pouch", and transact **device-to-device over Bluetooth with
 When a device reconnects, it uploads a signed transaction log that the backend validates and
 posts to a ledger.
 
-The product also supports **online, server-mediated transactions** (Phase 2, delivered and
-verified in production): direct online transfer between users, and "Bayar QR" — a
-QR-code-based payment flow, both online and offline. **"Bayar QR" is NOT the national QRIS
-standard.** There is no integration with Bank Indonesia, a bank, or a licensed payment
-service provider. Never call it "QRIS" in code, docs, or UI copy — always "Bayar QR".
+The product also supports **online, server-mediated transactions**: direct online transfer
+between users, and "Bayar QR" — a QR-code-based payment flow, both online and offline.
+**"Bayar QR" is NOT the national QRIS standard.** Never call it "QRIS" in code, docs, or UI copy.
 
 **Stage: prototype.** Prefer simple, correct, auditable code over cleverness or premature scale.
 
 ---
 
-## 1a. ⚠️ Device ID format change (August 2026) — read before touching anything device-related
+## 1a. Device ID format — string, not UUID (delivered)
 
-> [!warning] Breaking change, decided with the hardware team
-> `deviceId` is **no longer a UUID v4**. It is now a **plain string**, sourced from the
-> firmware/hardware team's own identifier scheme (most likely derived from the ESP32's
-> factory MAC address, but confirm the exact source format before writing validation
-> regex or migration DDL with hard length assumptions).
+`deviceId` is a plain string (`VARCHAR(128)`), sourced from the hardware team's own scheme
+(MAC-derived), not a server-generated UUID v4. Must never contain `/` or `|` — enforced at
+both application level (400 on registration) and database level (CHECK constraint). This
+affects `deviceId` only — `userId`, `certificateId`, `requestId` remain UUID.
 
-### Required format constraints (locked, regardless of exact source format)
+`publicKey` is validated as Base64(X.509 SubjectPublicKeyInfo DER) — a fixed 44-byte
+structure, not raw 32 bytes — matching exactly what `Ed25519Verifier` expects at signature
+verification time. Both backend (`Ed25519PublicKeyValidator`) and backoffice (real-time
+form feedback) enforce this identically.
 
-`deviceId` **must never contain `/` or `|`**. Both characters already have structural
-meaning elsewhere in the system and a device ID containing either will silently corrupt
-unrelated logic:
+---
 
-- `/` is a level separator in MQTT topics (`wallet/{deviceId}/#` — see §8, §15). A `/`
-  inside `deviceId` creates unintended topic sub-levels.
-- `|` is the field delimiter in the offline signature message format (see §14, offline
-  sync flow): `{offlineTxnId}|{senderDeviceId}|{receiverDeviceId}|{amount}|{counter}|
-  {deviceTimestamp}`. A `|` inside `deviceId` breaks unambiguous parsing of that string.
+## 1b. ⚠️ Online endpoint authentication — deliberate decision, read carefully
 
-**Validate this explicitly at the point of device registration** (`POST /admin/devices`)
-— reject with 400 if either character is present. Do not rely on downstream code to
-happen to handle it safely.
+> [!warning] This is a documented, intentional product decision — not an oversight
+> As of the commit that introduced `receiverDeviceId`/`Receiver-Device-Id`/
+> `Payer-Device-Id`, **online synchronous endpoints (`POST /device/transfer`,
+> `POST /device/payment-request`, `POST /device/payment-request/{id}/pay`) no longer
+> require a Bearer device token.** Authentication is now a plain `device_id` /
+> `Receiver-Device-Id` / `Payer-Device-Id` HTTP header, looked up directly against
+> `devices` with no secret or signature check of any kind.
 
-### What actually changes in the schema and code
+**What this means concretely:** `deviceId` is not secret by design (§1a) — it's meant to be
+public, visible in MQTT topics, QR payloads, logs. Under this model, **anyone who knows a
+registered device's ID can call these three endpoints as that device**, with nothing to
+prove ownership. This is architecturally different from the offline BLE flow (§3, §4),
+where Ed25519 signatures remain the actual security control — this decision only affects
+the three synchronous online endpoints listed above.
 
-- `devices.device_id` column type: `UUID` → `VARCHAR` (exact length TBD — see the open
-  question below; use a generous bound like `VARCHAR(128)` unless the hardware team
-  confirms a fixed length, e.g. 12 or 17 characters for a MAC-derived ID).
-- Every foreign key referencing `devices.device_id` changes type to match:
-  `offline_transactions`, `sync_inbox`, `offline_certificates`, ledger accounts tied to
-  a device's pouch, `idempotency_keys` (device-scoped rows), and the MQTT
-  `dynamic-security.json` `username` field (already a string in Mosquitto's model, so
-  no change needed there — but stop assuming it's UUID-shaped when writing new code
-  against it, e.g. in `MqttAdminClient`).
-- **This requires a new Flyway migration** — do not attempt to alter the column type
-  silently as a side effect of another PR. Write it as its own migration
-  (`V(next)__device_id_to_string.sql`), and confirm with the human developer how
-  existing rows (which currently hold UUID-formatted strings) should be handled —
-  likely no data transformation is needed since a UUID string is *already* a valid
-  string, but the column's `UUID` type constraint itself must be dropped.
-- `receiverDeviceId` / `senderDeviceId` fields in API request/response bodies and
-  Swagger schemas: change documented type from `"uuid"` to `"string"` everywhere they
-  appear (Transfer Online, Bayar QR payloads, sync batch payloads, admin device
-  endpoints).
-- **`userId` and other UUID-typed identifiers are UNCHANGED** — this only affects
-  `deviceId`. Do not conflate the two or apply this change more broadly than asked.
-
-### Documents that also need this update (outside this repo's CLAUDE.md)
-
-- `docs/QR_OFFLINE_PAYLOAD_SPEC.md` — payload format
-  `{receiverDeviceId}|{amount}|{nonce}|{expiresAt}` currently documents
-  `receiverDeviceId` as a UUID; update to "string, format defined by hardware team,
-  never containing `/` or `|`."
-- The BLE protocol draft (`SPESIFIKASI_BLE_DAN_MQTT_DEVICE.md` / vault note
-  `MQTT Dynamic Security`) — any GATT payload size estimates that assumed a 36-character
-  UUID string need rechecking once the real format is confirmed (a MAC-derived string is
-  typically shorter, which is a net improvement for BLE packet size, not a regression).
-
-### Open question — confirm with hardware team before finalizing the migration
-
-What is the exact source and format? (e.g., raw 6-byte MAC as 12 hex characters with no
-separator, `AA:BB:CC:DD:EE:FF` with colons, or something else entirely.) This determines
-the exact column length bound and whether any additional character-set validation is
-needed beyond the `/` and `|` prohibition above.
+**This was raised explicitly to the human developer, who confirmed this is the intended
+direction for this stage of the product.** Do not "fix" this by silently reintroducing
+Bearer-token auth on these endpoints — if asked to touch these controllers for an unrelated
+reason, leave the auth model as-is unless explicitly instructed otherwise. If a future task
+seems to assume these endpoints are token-protected, stop and flag the discrepancy rather
+than assuming either the code or the task description is wrong.
 
 ---
 
@@ -96,95 +66,49 @@ needed beyond the `/` and `|` prohibition above.
 
 - **Language:** Java 21 (LTS)
 - **Framework:** Spring Boot 3.x
-- **Build:** Maven (`./mvnw`). If the team later moves to Gradle, ask first.
-- **DB:** PostgreSQL 16
-- **Migrations:** Flyway. `spring.jpa.hibernate.ddl-auto=validate` — Hibernate must NEVER create or alter schema.
-- **Persistence:** Spring Data JPA for simple reads; **plain SQL / JdbcTemplate for all ledger and money writes.**
-- **MQTT client:** Eclipse Paho (`org.eclipse.paho`).
-- **Scheduled-job locking:** ShedLock (Postgres-backed) on every `@Scheduled` method.
-- **Tests:** JUnit 5 + Testcontainers (real Postgres, real Mosquitto for MQTT auth tests).
-- **API docs:** Springdoc OpenAPI. Swagger UI at `/swagger-ui.html`, api profile only.
-- **Password hashing:** Spring Security `BCryptPasswordEncoder`, cost factor 10.
-- **JWT:** `io.jsonwebtoken` (jjwt) for admin/writer session tokens.
+- **Build:** Maven (`./mvnw`)
+- **DB:** PostgreSQL 16, Flyway migrations, `ddl-auto=validate`
+- **Persistence:** Spring Data JPA for simple reads; **plain SQL / JdbcTemplate for all
+  ledger and money writes.**
+- **MQTT client:** Eclipse Paho
+- **Scheduled-job locking:** ShedLock on every `@Scheduled` method
+- **Tests:** JUnit 5 + Testcontainers (real Postgres, real Mosquitto)
+- **API docs:** Springdoc OpenAPI, Swagger UI at `/swagger-ui.html`, api profile only
+- **Password hashing:** BCrypt, cost factor 10
+- **JWT:** `io.jsonwebtoken` — **admin/writer auth only** (§4). Not used for device
+  auth on the online endpoints as of §1b.
 
-> **Package root:** `com.dompetgaruda.api`. Everything follows this value.
-
-### Migration ownership
-
-- **API service:** `spring.flyway.enabled=true`, `ddl-auto=validate`. Runs migrations on boot.
-- **Worker service:** `spring.flyway.enabled=false`, `ddl-auto=validate`. Never migrates.
-
-### Spring Security autoconfiguration (REQUIRED)
-
-`UserDetailsServiceAutoConfiguration` must be **excluded** in the API profile. Add to
-`application-api.yml`:
-
-```yaml
-spring:
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
-```
+> **Package root:** `com.dompetgaruda.api`.
 
 ---
 
-## 3. Architecture (decided — build to this, don't reinvent)
+## 3. Architecture
 
-**One codebase, one Docker image, two runtime containers** distinguished only by Spring profile:
+**One image, two profiles** (`api`, `worker`) — see prior revisions for full detail,
+unchanged. Profile isolation rule still applies: any bean referencing admin config or
+`MqttAdminClient` must be `@Profile("api")`.
 
-- **`api` profile** — REST endpoints enabled, all `@Scheduled` jobs disabled. Runs Flyway.
-- **`worker` profile** — `spring.main.web-application-type=none`, scheduled jobs enabled, Flyway disabled.
+**Two settlement models, still architecturally distinct:**
+- Offline (BLE): worker settles async via `sync_inbox`, Ed25519 signatures are the
+  security control.
+- Online (Transfer/Bayar QR): API posts synchronously; **auth is now header-based
+  device lookup, not Bearer token (§1b)** — this is the one thing that changed from
+  earlier revisions of this document.
 
-### Profile isolation rule (learned in production — do not repeat this bug)
-
-Any Spring bean that references admin config (`ADMIN_JWT_SECRET`, `MqttAdminClient`,
-admin-specific services) **must be annotated `@Profile("api")`** so it never loads in the
-worker profile. A missing annotation crashes the worker at startup with
-`PlaceholderResolutionException`. This is a hard rule.
-
-### The offline sync flow (transactional inbox pattern)
-
-1. Device uploads signed batch → API writes to `sync_inbox`, returns `202`. No ledger writes.
-2. Worker polls `sync_inbox` with `SELECT ... FOR UPDATE SKIP LOCKED`.
-3. Worker validates, posts ledger entries, publishes MQTT result.
-
-### Online flows do NOT use the inbox pattern
-
-Online transfer and Bayar QR Online are synchronous, server-mediated operations. The API
-validates and posts directly to the ledger in the same request.
-
-### Ledger posting reference
-
-| Type | Debit | Credit | Settled by |
-|------|-------|--------|------------|
-| `TOPUP` | SYSTEM | user.ONLINE | API (synchronous) |
-| `POUCH_LOAD` | user.ONLINE | device.POUCH | API (synchronous) |
-| `OFFLINE_TRANSFER` | sender.POUCH | receiver.ONLINE | Worker (async, at sync) |
-| `POUCH_REFUND` | device.POUCH | user.ONLINE | Worker (async, at sync) |
-| `ONLINE_TRANSFER` | sender.ONLINE | receiver.ONLINE | API (synchronous) |
-| `QR_PAYMENT_ONLINE` | payer.ONLINE | payee.ONLINE | API (synchronous) |
+**Ledger posting reference** — unchanged, see prior revisions for the full table
+(`TOPUP`, `POUCH_LOAD`, `OFFLINE_TRANSFER`, `POUCH_REFUND`, `ONLINE_TRANSFER`,
+`QR_PAYMENT_ONLINE`).
 
 ---
 
-## 4. Authentication (prototype-grade — NG1)
+## 4. Authentication
 
-- **Admin/writer auth:** real accounts in `admin_users` (BCrypt + role). JWT, 24h expiry,
-  `@Profile("api")` only.
-- **Device registration:** admin-initiated. Server returns device token once, stores only
-  hash. `deviceId` itself is now a **string, not a UUID** — see §1a.
-- **Device auth:** device presents token as Bearer. Same token doubles as the device's
-  MQTT password (§15) — no separate credential minted for MQTT.
-
-### Admin/writer login
-
-```
-POST /admin/auth/login
-Body:    { "username": "...", "password": "..." }
-Success: 200 { "token": "<JWT>", "type": "Bearer", "username": "...", "role": "ADMIN"|"WRITER" }
-Failure: 401 { "message": "Invalid username or password" }
-```
-
-Brute-force protection: 5 failed attempts / 5 min / IP → 429.
+- **Admin/writer:** unchanged — JWT via `POST /admin/auth/login`, `@Profile("api")` only.
+- **Device — offline endpoints (`/device/sync`, `/device/pouch/load`):** Bearer device
+  token, unchanged, still the primary check backed by Ed25519 signatures at settlement.
+- **Device — online endpoints (`/device/transfer`, `/device/payment-request*`):**
+  `device_id`-style header only, no Bearer token, no signature. See §1b.
+- **MQTT:** device token reused as MQTT password, unchanged.
 
 ---
 
@@ -192,323 +116,90 @@ Brute-force protection: 5 failed attempts / 5 min / IP → 429.
 
 ```
 src/main/java/com/dompetgaruda/api/
-  common/          # entities, ledger posting, Ed25519 verification, DTOs
-  config/          # ApiConfig, WorkerConfig (@Profile-gated), SecurityConfig, MqttConfig
-  auth/            # AdminTokenFilter (@Profile("api"), JWT), DeviceTokenService,
-                   # DeviceTokenVerifier, AdminLoginController, AdminUser entity/repository
-  device/          # device registration, certificate issuance, device status admin endpoints.
-                   # deviceId validation (reject "/" and "|") lives here — see §1a.
-  wallet/          # balance enquiry (read), top-up, pouch provisioning
-  ledger/          # LedgerPostingService — double-entry posting, balance derivation
-  transfer/        # Online transfer between users. idempotency_keys table, shared with qrpayment/.
-  qrpayment/       # Bayar QR online (payment_requests table) + Bayar QR offline backend support
-                   # (origin column on offline_transactions).
-  sync/            # api: ingest controller → sync_inbox / worker: inbox poller + settlement
-  reconciliation/  # worker: pouch-vs-ledger reconciliation job (PouchReconciliationJob)
-  mqtt/            # Paho client (worker publisher). MqttAdminClient (@Profile("api"), §15)
-                   # is a SEPARATE bean/connection — never merge them.
-  admin/           # admin-only actions: resolve flags, etc.
-  article/         # article CRUD, public read endpoints (WRITER/ADMIN gated for writes)
+  common/          # entities, ledger posting, Ed25519 verification
+  config/          # SecurityConfig — /admin/** JWT-protected via AdminTokenFilter;
+                   # everything else permitAll() at the Spring Security layer (§1b —
+                   # online device endpoints enforce their own header-based device
+                   # lookup inside the controller, not via a security filter)
+  auth/            # AdminTokenFilter (@Profile("api")), DeviceTokenService,
+                   # DeviceTokenVerifier (still used by offline endpoints only)
+  device/          # registration (deviceId + publicKey validation, §1a),
+                   # Ed25519PublicKeyValidator, certificate issuance, status admin endpoints
+  wallet/          # balance enquiry, top-up, pouch provisioning
+  ledger/          # LedgerPostingService
+  transfer/        # Online transfer — device_id header auth (§1b)
+  qrpayment/       # Bayar QR online/offline — Receiver-Device-Id / Payer-Device-Id
+                   # header auth (§1b)
+  sync/            # offline sync ingest (api) + settlement (worker) — unchanged,
+                   # still Bearer-token + Ed25519 signature verified
+  reconciliation/  # PouchReconciliationJob (worker) — NOTE: this is the existing
+                   # pouch-vs-ledger job, NOT the same as Feature A's notification
+                   # reconciliation (§17) — do not conflate the two
+  mqtt/            # Paho publisher (worker) + MqttAdminClient (api, provisioning)
+  admin/           # resolve flags, etc.
+  article/         # article CRUD
 src/main/resources/
-  db/migration/    # V1__init.sql ... — includes the new device_id-to-string migration (§1a).
-                   # Never edit an applied migration.
-  application.yml
-  application-api.yml
-  application-worker.yml
+  db/migration/    # Flyway — includes device_id VARCHAR(128) migration
+  application.yml / application-api.yml / application-worker.yml
 ```
 
 ---
 
 ## 6. Configuration & local development
 
-- **No secrets in committed files.** Use `${ENV_VAR}` placeholders. Commit `.env.example`.
-- **CI/CD:** GitHub Actions. test → build-push (GHCR) → deploy (SSH + docker compose).
-- **`.gitignore` must include:** `target/`, `.env`, `*.log`, `.idea/`, `*.iml`
-- **Recurring failure mode — every new required env var must be added to the VPS `.env`
-  manually before the first deploy that needs it, or the API container will crash-loop.**
-  This has happened repeatedly. Any PR introducing a new required property must
-  explicitly call this out in its description.
+Unchanged — no secrets in committed files, `.env.example` committed, recurring
+crash-loop failure mode if a new required env var isn't added to both `.env` and
+`docker-compose.prod.yml` before deploy.
 
 ---
 
 ## 7. MONEY-SAFETY INVARIANTS (read twice)
 
-1. **No mutable balance column.** Balance = `SUM(CREDIT) − SUM(DEBIT)` over ledger entries.
-2. **Every money movement is balanced double-entry** in one DB transaction.
-3. **Money is `BIGINT` (whole Rupiah).** Never `float`/`double`/`Float`/`Double`.
-4. **Idempotency at DB level.**
-   - Offline: `UNIQUE(sender_device_id, counter)` — note `sender_device_id` is now a
-     string column, not UUID; the uniqueness constraint itself is unaffected by the type
-     change, just the underlying column type (§1a).
-   - Online: `UNIQUE(idempotency_key)` in `idempotency_keys`, shared by
-     `/device/transfer` and `/device/payment-request/{id}/pay`.
-5. **The API never posts to the ledger from the offline sync endpoint.** Only the worker
-   settles offline transactions. Online endpoints post synchronously — do not conflate.
-6. **Pouch outflows ≤ certificate.** Violation → flag, never post.
-7. **All `@Scheduled` jobs have ShedLock.**
-8. **MQTT carries no financial authority.** Treat all MQTT input as untrusted hints.
-9. **Never log secrets:** PINs, private keys, signatures, tokens, passwords, MQTT
-   credentials.
-10. **Schema only via Flyway.** Never edit an applied migration — add a new one.
-11. **Failed/suspicious work is flagged, never silently dropped.**
-12. **Every configurable money limit is a named config property**, never a hardcoded
-    literal. A missing required property must fail startup.
+1–12 unchanged from prior revisions — no mutable balance column, balanced double-entry,
+`BIGINT` money, DB-level idempotency, worker-only offline ledger posting, pouch outflow
+caps, ShedLock on scheduled jobs, MQTT carries no financial authority, no secret
+logging, Flyway-only schema changes, flag-don't-drop, named config properties.
+
+> [!note] §1b does not violate these invariants
+> The online-endpoint auth change (§1b) affects **who can initiate** a transaction, not
+> the ledger's internal correctness. Idempotency (invariant 4), balanced double-entry
+> (invariant 2), and every other invariant here still hold regardless of how the
+> `deviceId` in the request was authenticated. This is a real, separate risk (someone
+> could impersonate a device), just not one that breaks these specific invariants.
 
 ---
 
-## 8. MQTT topic contract
+## 8–16. Unchanged sections
 
-- `wallet/{deviceId}/status` — device → broker, retained, QoS 1. Last-Will = `offline`.
-  **`deviceId` here is now a plain string (§1a) — the `/` prohibition in §1a exists
-  specifically because this topic pattern would otherwise break.**
-- `wallet/{deviceId}/sync-result` — worker → sending device, QoS 1.
-- `wallet/{deviceId}/cert-refresh` — worker → device, QoS 1.
-- `wallet/{deviceId}/payment-received` — API/worker → receiving device, QoS 1,
-  non-retained. Notification only — never trust it as proof of settlement.
-- **ACL:** each device may only pub/sub under `wallet/{itsOwnDeviceId}/#`, enforced by
-  the Mosquitto Dynamic Security plugin (§15).
-- **Transport:** TLS port 8883 only. Port 1883 is `127.0.0.1`-bound, local admin only.
+MQTT topic contract, commands reference, testing expectations, git workflow,
+prohibitions list, documentation deliverables, Phase 2 scope (delivered), MQTT Dynamic
+Security provisioning (delivered), and known gaps — all unchanged from prior revisions.
+One addition to the prohibitions list (§12): **don't silently revert the §1b auth
+decision.**
 
 ---
 
-## 9. Commands
+## 17. Phase 3 Feature A — Notification Reconciliation (STARTING NOW)
 
-```bash
-./mvnw clean verify                                          # must pass before any PR
-./mvnw spring-boot:run -Dspring-boot.run.profiles=api
-./mvnw spring-boot:run -Dspring-boot.run.profiles=worker
-docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs api --tail=50
-docker compose -f docker-compose.prod.yml exec mosquitto sh -c "mosquitto_ctrl -h 127.0.0.1 -p 1883 -u admin -P '<admin password>' dynsec <command>"
-```
+Approved in proposal revision v1.1, acceptance criteria agreed with Faisal
+(`AC-TestCase-Fitur-A-Notifikasi-Rekonsiliasi.docx`). Not yet implemented — this is the
+current milestone.
 
----
+**Design (unchanged from when this was originally specified):**
 
-## 10. Testing expectations
+1. New table `notification_log`: `id`, `offline_transaction_id` (FK), `device_id`
+   (receiver, `VARCHAR(128)` FK — matches §1a), `status`
+   (`PENDING`/`DELIVERED`/`EXPIRED`), `created_at`, `delivered_at`, `expires_at`.
+2. Config: `notification.reconciliation.expiry-days`, default `3`
+   (`NOTIFICATION_RECONCILIATION_EXPIRY_DAYS`), agreed with the client at 3 days.
+3. Worker settlement flow inserts a `PENDING` row and attempts
+   `wallet/{receiverDeviceId}/payment-received` publish for every `OFFLINE_TRANSFER`.
+4. Reconciliation check piggybacks on existing authenticated device traffic — no new
+   "online now" ping endpoint. Re-publishes any `PENDING` rows for that device.
+5. Scheduled sweep job (`NotificationExpiryJob`, ShedLock, hourly) marks stale
+   `PENDING` rows `EXPIRED` — belt-and-suspenders alongside the reconnect check.
+6. **`GET /device/balance` never references `notification_log`, ever** — balance
+   correctness must be fully independent of notification delivery (§7 invariant 8).
+   This is the single most important test in the eventual PR.
 
-- Every ledger operation asserts entries balance (credits = debits).
-- Read-only endpoints assert **zero rows written**.
-- Offline sync tests: happy path, replayed batch, over-pouch-limit, malformed batch,
-  out-of-order counter.
-- Online transfer / Bayar QR Online tests: happy path, insufficient balance, self-transfer,
-  duplicate idempotency key, expired/already-paid request.
-- Bayar QR Offline: `origin` never gates a verification branch (identical behavior for
-  `BLE` and `QR`).
-- **New — device ID format tests (§1a):** registration rejects a `deviceId` containing
-  `/` or `|` with 400; a valid string-format `deviceId` (non-UUID-shaped) registers
-  successfully and works correctly through the full offline BLE flow, MQTT provisioning,
-  and every endpoint that takes `deviceId` as a path or body parameter — do not leave any
-  code path that implicitly assumes UUID shape (e.g., regex validation somewhere that
-  still checks for UUID format needs to be found and removed).
-- MQTT provisioning: real Mosquitto Testcontainer, not a mock.
-- Use Testcontainers (real Postgres) — do not mock the database for money logic.
-
----
-
-## 11. Git workflow
-
-- Repo lives in the **client's** GitHub org. Use your own account.
-- **Commits authored by the human developer's GitHub account.**
-- Never push directly to `main`. Never force-push a shared branch.
-- Feature branch → PR against `main` → human reviews → merge.
-- `./mvnw clean verify` must pass before opening a PR.
-
----
-
-## 12. What NOT to do
-
-- Don't scaffold a generic CRUD app. Don't add microservices/message brokers/service mesh.
-- Don't use ORM-generated queries for money movements.
-- Don't expand scope beyond the PRD — raise questions first.
-- Don't turn balance enquiry into transaction history without confirming scope (see the
-  Phase 3 proposal under discussion).
-- Don't store or transmit money decisions over MQTT.
-- Don't reference admin JWT/auth config in any bean without `@Profile("api")`.
-- Don't reintroduce `ADMIN_API_TOKEN`. Don't build a public signup endpoint.
-- **Don't call the QR payment feature "QRIS" anywhere.**
-- **Don't force online endpoints into the sync_inbox/worker settlement pattern.**
-- **Don't hardcode any money limit.**
-- **Don't implement real QRIS/bank/PJP integration.**
-- **Don't re-run the Mosquitto Dynamic Security migration through code** — it's done
-  manually on the VPS; new PRs only use the existing accounts.
-- **Don't assume `deviceId` is UUID-shaped anywhere in new code (§1a).** Don't validate
-  it against a UUID regex, don't generate one with `UUID.randomUUID()`, don't size a
-  column assuming exactly 36 characters. Treat it as an opaque string with only two
-  hard constraints: no `/`, no `|`.
-- **Don't apply the string-ID change to `userId`, `certificateId`, `requestId`, or any
-  other identifier.** This change is scoped to `deviceId` only.
-- **Don't build a staging environment, second deployment target, or any parallel
-  infrastructure for Phase 3 (§17).** It was explicitly descoped by agreement with
-  the client — deploy Phase 3 work the same way every prior phase was deployed.
-- **Don't invent a reversal/refund mechanism to make the `REVERSED` status enum feel
-  complete (§17.2).** Raise it as an open question if it comes up — don't silently build it.
-
----
-
-## 13. Documentation deliverables (required per PR)
-
-### 13a. README.md
-```bash
-grep -n "^## " README.md   # every heading must appear exactly once, before any PR
-```
-
-### 13b. Example API calls — `docs/api-examples/`
-One numbered shell script per endpoint, `curl` + expected response as comment.
-
-### 13c. Swagger annotations
-`@Tag`, `@Operation`, `@ApiResponse` per status code. `@Schema` per DTO field —
-**update every `deviceId` field's example value away from a UUID-looking string (§1a).**
-
----
-
-## 14. Phase 2 scope — Online Transactions & Bayar QR (DELIVERED)
-
-Full detail unchanged from the previous revision of this document — Transfer Online,
-Bayar QR Online, Bayar QR Offline, idempotency pattern, and configuration are all
-delivered and verified in production. **The only edit needed here going forward is
-updating any JSON example in this section that shows `"receiverDeviceId": "uuid"` to
-`"receiverDeviceId": "string"`, per §1a.** Do not otherwise re-litigate this section.
-
----
-
-## 15. MQTT Per-Device Provisioning (Dynamic Security) — DELIVERED
-
-Infrastructure migrated to Mosquitto's Dynamic Security plugin; `MqttAdminClient`
-(`@Profile("api")`, separate from the worker's publisher) provisions device MQTT
-accounts atomically at registration (mandatory — failure rolls back registration, 503)
-and revokes/reinstates on suspend/reactivate (best-effort).
-
-> [!note] Username field, post-§1a
-> `MqttAdminClient.provisionDevice(deviceId, deviceToken)` uses `deviceId` directly as
-> the MQTT username. Mosquitto's Dynamic Security plugin has no opinion on username
-> format — a string identifier works exactly as well as a UUID string did. No change
-> needed to `MqttAdminClient` itself beyond ensuring nothing in it assumes UUID shape.
-
-See the full infrastructure detail (Alpine plugin path, folder-mount requirement,
-ownership requirement, `exec` vs `run`, Git-commit discipline for config changes) in the
-Obsidian vault note `MQTT Dynamic Security` or the standalone
-`Panduan-MQTT-Dynamic-Security.docx` — unchanged by this device ID revision.
-
----
-
-## 16. Known gaps (unchanged by this revision, still open)
-
-- BLE certificate-exchange GATT protocol still needs a final spec handed to firmware —
-  **this is now more urgent, not less, since the hardware team is actively making
-  device-identity decisions (like this one) and should receive the GATT spec in the
-  same conversation.**
-- Server public key embedding in firmware, no rotation plan yet.
-
----
-
-## 17. Phase 3 scope — Notification Reconciliation, Transaction History, Analytics (APPROVED)
-
-Faisal approved proposal revision v1.1 in August 2026. This section is the locked
-engineering spec — read it fully before starting any Phase 3 PR. Build order:
-§17.1 → §17.2 → §17.3, same easiest-to-hardest sequencing as the original proposal.
-
-> [!warning] Staging/UAT is explicitly OUT of scope for this phase
-> v1.1 originally required a staging/UAT environment before any production release.
-> **This was descoped by mutual agreement with Faisal and deferred to a separate
-> future proposal.** Do not build any staging infrastructure, second environment, or
-> parallel deployment target as part of any Phase 3 PR. Deployment for this phase
-> follows the same discipline used for every prior phase: take a backup immediately
-> before a schema-altering deploy, have the rollback command ready before starting,
-> verify directly against production afterward.
-
-### 17.1 Feature A — Notification Reconciliation for Offline Transfers
-
-The original Phase 3 proposal's notification feature (one-shot `payment-received`
-publish, mirroring the online flow) is **not sufficient per v1.1**. A receiving device
-that is offline at the moment of settlement must still find out once it reconnects —
-not just silently miss the notification forever.
-
-**Design:**
-1. Add a `notification_status` column (`PENDING`, `DELIVERED`, `EXPIRED` — pick a
-   short enum, confirm naming with the human developer before implementing) to a new
-   or existing table tracking each `payment-received` event that needs delivery
-   confirmation. This is metadata about notification delivery, not a new source of
-   balance truth — the ledger remains authoritative regardless of this column's value.
-2. Worker settlement flow (§3, offline sync) publishes the notification exactly as
-   before, but now also records the attempt with `notification_status = PENDING`.
-3. **New reconciliation check**, triggered when a device reconnects and calls any
-   authenticated endpoint (piggyback on existing traffic — do not require a new
-   "I'm online now" ping endpoint unless the human developer explicitly asks for one):
-   query for any `PENDING` notifications belonging to that device, re-publish them,
-   mark `DELIVERED` on confirmed publish.
-4. This does NOT change what the device sees when it calls `GET /device/balance` —
-   that number is always correct regardless of notification status, per invariant 8
-   (§7) that MQTT carries no financial authority. This feature only affects whether a
-   push notification arrives, never balance correctness.
-
-### 17.2 Feature B — Transaction History with Status and Audit Log
-
-**Two new endpoints** (confirmed scope, unchanged from the original proposal):
-
-```
-GET /device/transactions?page=0&size=20&type=ONLINE_TRANSFER&from=...&to=...
-GET /admin/users/{userId}/transactions?page=0&size=20&type=...&from=...&to=...
-```
-
-Both are pure reads over `ledger_entries`/`ledger_transactions` — no new balance
-columns, per §7 invariant 1. Pagination is mandatory from the first implementation,
-not a later optimization.
-
-**New per v1.1 — a cross-system transaction status field.** Every transaction row
-returned by these endpoints must show a status: `SUCCESS`, `PENDING`, `FAILED`, or
-`REVERSED`. This status must be **derivable consistently** across the ledger, these
-API responses, the backoffice UI, and (eventually) the device's own display.
-
-> [!warning] `REVERSED` implies a reversal concept that doesn't exist yet
-> No refund/reversal mechanism currently exists anywhere in this system. Before
-> implementing `REVERSED` as a real status value, confirm with the human developer
-> whether this phase actually builds a reversal capability, or whether `REVERSED` is
-> simply reserved in the enum for future use and never actually produced yet. Do not
-> silently invent a reversal flow to make the enum "complete" — raise this explicitly.
-
-Status derivation approach (subject to confirmation, not fully locked):
-- `SUCCESS` — a settled `ledger_transactions` row exists (online flows: exists
-  immediately; offline flows: exists after worker settlement).
-- `PENDING` — an offline transaction uploaded via sync but not yet settled by the
-  worker (i.e., still sitting in `sync_inbox`).
-- `FAILED` — a transaction that failed validation and was flagged
-  (`flagged_transactions`), never posted to the ledger.
-- `REVERSED` — see the warning above.
-
-**New — admin access audit log.** Every time an admin calls
-`GET /admin/users/{userId}/transactions`, record: admin's identity (from JWT), the
-`userId` whose data was accessed, timestamp, and the query parameters used. A new
-`admin_access_log` table, written to on every call — this is a genuinely new
-subsystem, not a modification of an existing one. Do not skip writing this log even
-on an empty result set; the access itself is what's being audited, not the data
-returned.
-
-### 17.3 Feature C — Analytics Dashboard (build after §17.2, shares query shape)
-
-```
-GET /admin/analytics/overview?from=...&to=...
-```
-
-Metrics (confirmed scope per v1.1, more than the original proposal's three):
-- Total transaction value (Rupiah) and count, per day and for the selected period
-- Transaction counts by status (`SUCCESS`/`FAILED`/`PENDING`/`REVERSED` if used)
-- Transaction type composition (offline / online / QR)
-- Active users (daily / 7-day / 30-day)
-- Device status breakdown (active / suspended / locked)
-- 7-day and 30-day transaction and device growth trends
-
-Aggregation queries are direct SQL, not ORM-generated, consistent with this project's
-existing money-query philosophy (§2). Dashboard is explicitly **read-only** — it must
-never write to the ledger under any circumstance, and query cost must not degrade the
-performance of live transaction processing. If an aggregation query risks that, flag
-it rather than shipping it silently slow.
-
-### Deliverables required for every Phase 3 PR (per v1.1, in addition to §13)
-
-- Written acceptance criteria and test cases, agreed with the human developer
-  **before** implementation starts — v1.1 requires this explicitly; a PR without
-  pre-agreed acceptance criteria attached is incomplete regardless of code quality.
-- Release notes for any production deployment: version, change list, deployment
-  steps, rollback plan, and test results — per the deployment discipline in the
-  warning above (staging is descoped, so this documentation is what substitutes for
-  a staging sign-off).
+All 7 acceptance criteria and 7 test cases from the signed AC document apply unchanged.
