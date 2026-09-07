@@ -36,3 +36,11 @@ transfer:
 # an expiry window is not a money-safety limit, so a safe default is acceptable here.
 qr-payment:
   request-ttl-minutes: ${QR_PAYMENT_REQUEST_TTL_MINUTES:10}
+
+# Days a PENDING payment-received notification (Phase 3 Feature A, CLAUDE.md §17) stays
+# eligible for re-publish before NotificationExpiryJob marks it EXPIRED. Agreed with the
+# client at 3 days — a delivery-metadata window, not a money-safety limit, so a default
+# is acceptable (unlike transfer.online.max-amount-idr).
+notification:
+  reconciliation:
+    expiry-days: ${NOTIFICATION_RECONCILIATION_EXPIRY_DAYS:3}

@@ -97,6 +97,8 @@ class SettlementTest extends WorkerIntegrationTestBase {
                     "(SELECT batch_id FROM sync_inbox WHERE device_id = ?)", senderDeviceId);
         jdbc.update("DELETE FROM flagged_transactions WHERE certificate_id IN " +
                     "(SELECT certificate_id FROM offline_certificates WHERE device_id = ?)", senderDeviceId);
+        // Phase 3 Feature A — notification_log FKs to offline_transactions, must go first.
+        jdbc.update("DELETE FROM notification_log WHERE device_id = ?", receiverDeviceId);
         jdbc.update("DELETE FROM offline_transactions WHERE sender_device_id = ? OR receiver_device_id = ?",
                 senderDeviceId, receiverDeviceId);
         jdbc.update("DELETE FROM sync_inbox WHERE device_id = ?", senderDeviceId);
