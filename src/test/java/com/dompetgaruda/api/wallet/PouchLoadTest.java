@@ -38,8 +38,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>400 when amount exceeds configured pouch max.</li>
  *   <li>400 when amount is zero.</li>
  *   <li>400 when amount is negative.</li>
- *   <li>401 with missing device token.</li>
- *   <li>401 with wrong device token.</li>
+ *   <li>401 with missing Device-Id header.</li>
+ *   <li>401 with unregistered Device-Id.</li>
+ *   <li>A valid Device-Id with NO Authorization header at all now succeeds.</li>
  *   <li>Atomicity: 409 conflict leaves ledger_entries unchanged.</li>
  * </ol>
  */
@@ -99,7 +100,7 @@ class PouchLoadTest extends ApiIntegrationTestBase {
         PouchLoadResponse resp = devicePost(
                 "/device/pouch/load",
                 new PouchLoadRequest(100_000L),
-                reg.deviceToken(),
+                reg.deviceId(),
                 PouchLoadResponse.class);
 
         assertThat(resp.certificateId()).isNotNull();
@@ -126,7 +127,7 @@ class PouchLoadTest extends ApiIntegrationTestBase {
         PouchLoadResponse resp = devicePost(
                 "/device/pouch/load",
                 new PouchLoadRequest(50_000L),
-                reg.deviceToken(),
+                reg.deviceId(),
                 PouchLoadResponse.class);
 
         Integer count = jdbc.queryForObject(
@@ -144,7 +145,7 @@ class PouchLoadTest extends ApiIntegrationTestBase {
 
         devicePost("/device/pouch/load",
                 new PouchLoadRequest(80_000L),
-                reg.deviceToken(),
+                reg.deviceId(),
                 PouchLoadResponse.class);
 
         // For the POUCH_LOAD transaction, SUM(CREDIT) must equal SUM(DEBIT)
@@ -171,14 +172,14 @@ class PouchLoadTest extends ApiIntegrationTestBase {
         // First load succeeds
         devicePost("/device/pouch/load",
                 new PouchLoadRequest(100_000L),
-                reg.deviceToken(),
+                reg.deviceId(),
                 PouchLoadResponse.class);
 
         // Second load must be rejected because the active cert still exists
         ResponseEntity<String> conflict = rest.exchange(
                 "/device/pouch/load",
                 HttpMethod.POST,
-                new HttpEntity<>(new PouchLoadRequest(50_000L), deviceHeaders(reg.deviceToken())),
+                new HttpEntity<>(new PouchLoadRequest(50_000L), deviceHeaders(reg.deviceId())),
                 String.class);
 
         assertThat(conflict.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
@@ -192,7 +193,7 @@ class PouchLoadTest extends ApiIntegrationTestBase {
 
         devicePost("/device/pouch/load",
                 new PouchLoadRequest(100_000L),
-                reg.deviceToken(),
+                reg.deviceId(),
                 PouchLoadResponse.class);
 
         long entriesBefore = countRows("ledger_entries");
@@ -200,7 +201,7 @@ class PouchLoadTest extends ApiIntegrationTestBase {
         rest.exchange(
                 "/device/pouch/load",
                 HttpMethod.POST,
-                new HttpEntity<>(new PouchLoadRequest(50_000L), deviceHeaders(reg.deviceToken())),
+                new HttpEntity<>(new PouchLoadRequest(50_000L), deviceHeaders(reg.deviceId())),
                 String.class);
 
         assertThat(countRows("ledger_entries"))
@@ -221,7 +222,7 @@ class PouchLoadTest extends ApiIntegrationTestBase {
         ResponseEntity<String> resp = rest.exchange(
                 "/device/pouch/load",
                 HttpMethod.POST,
-                new HttpEntity<>(new PouchLoadRequest(50_000L), deviceHeaders(reg.deviceToken())),
+                new HttpEntity<>(new PouchLoadRequest(50_000L), deviceHeaders(reg.deviceId())),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
@@ -240,7 +241,7 @@ class PouchLoadTest extends ApiIntegrationTestBase {
         ResponseEntity<String> resp = rest.exchange(
                 "/device/pouch/load",
                 HttpMethod.POST,
-                new HttpEntity<>(new PouchLoadRequest(MAX_AMOUNT + 1), deviceHeaders(reg.deviceToken())),
+                new HttpEntity<>(new PouchLoadRequest(MAX_AMOUNT + 1), deviceHeaders(reg.deviceId())),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -255,7 +256,7 @@ class PouchLoadTest extends ApiIntegrationTestBase {
         ResponseEntity<String> resp = rest.exchange(
                 "/device/pouch/load",
                 HttpMethod.POST,
-                new HttpEntity<>(new PouchLoadRequest(0L), deviceHeaders(reg.deviceToken())),
+                new HttpEntity<>(new PouchLoadRequest(0L), deviceHeaders(reg.deviceId())),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -270,7 +271,7 @@ class PouchLoadTest extends ApiIntegrationTestBase {
         ResponseEntity<String> resp = rest.exchange(
                 "/device/pouch/load",
                 HttpMethod.POST,
-                new HttpEntity<>(new PouchLoadRequest(-1_000L), deviceHeaders(reg.deviceToken())),
+                new HttpEntity<>(new PouchLoadRequest(-1_000L), deviceHeaders(reg.deviceId())),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
@@ -281,7 +282,7 @@ class PouchLoadTest extends ApiIntegrationTestBase {
     // -------------------------------------------------------------------------
 
     @Test
-    void pouchLoad_missingToken_returns401() {
+    void pouchLoad_missingDeviceIdHeader_returns401() {
         ResponseEntity<String> resp = rest.postForEntity(
                 "/device/pouch/load",
                 new HttpEntity<>(new PouchLoadRequest(100_000L)),
@@ -291,14 +292,40 @@ class PouchLoadTest extends ApiIntegrationTestBase {
     }
 
     @Test
-    void pouchLoad_wrongToken_returns401() {
+    void pouchLoad_unregisteredDeviceId_returns401() {
         ResponseEntity<String> resp = rest.exchange(
                 "/device/pouch/load",
                 HttpMethod.POST,
-                new HttpEntity<>(new PouchLoadRequest(100_000L), deviceHeaders("a".repeat(64))),
+                new HttpEntity<>(new PouchLoadRequest(100_000L), deviceHeaders("does-not-exist")),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    /**
+     * The actual behavior change (CLAUDE.md §1b, PRD R20): pouch load is no longer Bearer-token
+     * protected. A registered Device-Id with NO Authorization header at all now succeeds —
+     * previously this would have been a 401.
+     */
+    @Test
+    void pouchLoad_validDeviceIdNoAuthorizationHeader_succeeds() {
+        UUID userId = createUser("+62831000010");
+        RegisterDeviceResponse reg = registerDevice(userId, "pk-pouch-010");
+        topUp(userId, 200_000L);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("Device-Id", reg.deviceId());
+        assertThat(headers.containsKey(HttpHeaders.AUTHORIZATION)).isFalse();
+
+        ResponseEntity<PouchLoadResponse> resp = rest.exchange(
+                "/device/pouch/load",
+                HttpMethod.POST,
+                new HttpEntity<>(new PouchLoadRequest(50_000L), headers),
+                PouchLoadResponse.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(resp.getBody().issuedAmount()).isEqualTo(50_000L);
     }
 
     // -------------------------------------------------------------------------
@@ -334,11 +361,11 @@ class PouchLoadTest extends ApiIntegrationTestBase {
         return resp.getBody();
     }
 
-    private <T> T devicePost(String path, Object body, String token, Class<T> responseType) {
+    private <T> T devicePost(String path, Object body, String deviceId, Class<T> responseType) {
         ResponseEntity<T> resp = rest.exchange(
                 path,
                 HttpMethod.POST,
-                new HttpEntity<>(body, deviceHeaders(token)),
+                new HttpEntity<>(body, deviceHeaders(deviceId)),
                 responseType);
         assertThat(resp.getStatusCode().is2xxSuccessful())
                 .as("Expected 2xx from %s but got %s", path, resp.getStatusCode())
@@ -353,10 +380,10 @@ class PouchLoadTest extends ApiIntegrationTestBase {
         return h;
     }
 
-    private HttpHeaders deviceHeaders(String token) {
+    private HttpHeaders deviceHeaders(String deviceId) {
         HttpHeaders h = new HttpHeaders();
         h.setContentType(MediaType.APPLICATION_JSON);
-        h.setBearerAuth(token);
+        h.set("Device-Id", deviceId);
         return h;
     }
 

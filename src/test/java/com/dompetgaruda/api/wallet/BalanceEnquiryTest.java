@@ -32,8 +32,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>After a top-up of X, onlineBalance returns X and pouchCommitted returns 0.</li>
  *   <li>With an ACTIVE certificate row, pouchCommitted returns issued_amount.</li>
  *   <li>The endpoint makes zero writes to ledger_entries or ledger_transactions.</li>
- *   <li>Missing Authorization header returns 401.</li>
- *   <li>Wrong/unregistered device token returns 401.</li>
+ *   <li>Missing Device-Id header returns 401.</li>
+ *   <li>Unregistered Device-Id returns 401.</li>
+ *   <li>A valid Device-Id with NO Authorization header at all succeeds (CLAUDE.md §1b, PRD R20).</li>
  * </ol>
  */
 class BalanceEnquiryTest extends ApiIntegrationTestBase {
@@ -51,10 +52,10 @@ class BalanceEnquiryTest extends ApiIntegrationTestBase {
     @Test
     void balance_afterTopUp_returnsOnlineBalanceAndZeroPouch() {
         UUID userId = createUser("+62821000001");
-        String deviceToken = registerDevice(userId, "pub-bal-001").deviceToken();
+        String deviceId = registerDevice(userId, "pub-bal-001").deviceId();
         topUp(userId, 150_000L);
 
-        BalanceResponse resp = deviceGet("/device/balance", deviceToken, BalanceResponse.class);
+        BalanceResponse resp = deviceGet("/device/balance", deviceId, BalanceResponse.class);
 
         assertThat(resp.onlineBalance()).isEqualTo(150_000L);
         assertThat(resp.pouchCommitted()).isEqualTo(0L);
@@ -83,7 +84,7 @@ class BalanceEnquiryTest extends ApiIntegrationTestBase {
                 "test-signature",
                 Timestamp.from(Instant.now().plus(24, ChronoUnit.HOURS)));
 
-        BalanceResponse resp = deviceGet("/device/balance", reg.deviceToken(), BalanceResponse.class);
+        BalanceResponse resp = deviceGet("/device/balance", reg.deviceId(), BalanceResponse.class);
 
         assertThat(resp.pouchCommitted()).isEqualTo(50_000L);
         assertThat(resp.onlineBalance()).isEqualTo(100_000L);
@@ -96,13 +97,13 @@ class BalanceEnquiryTest extends ApiIntegrationTestBase {
     @Test
     void balance_makesZeroWritesToLedger() {
         UUID userId = createUser("+62821000003");
-        String deviceToken = registerDevice(userId, "pub-bal-003").deviceToken();
+        String deviceId = registerDevice(userId, "pub-bal-003").deviceId();
         topUp(userId, 75_000L);
 
         long entriesBefore = countRows("ledger_entries");
         long txnsBefore    = countRows("ledger_transactions");
 
-        deviceGet("/device/balance", deviceToken, BalanceResponse.class);
+        deviceGet("/device/balance", deviceId, BalanceResponse.class);
 
         assertThat(countRows("ledger_entries")).as("ledger_entries must not change on balance read")
                 .isEqualTo(entriesBefore);
@@ -115,24 +116,46 @@ class BalanceEnquiryTest extends ApiIntegrationTestBase {
     // -------------------------------------------------------------------------
 
     @Test
-    void balance_missingToken_returns401() {
+    void balance_missingDeviceIdHeader_returns401() {
         ResponseEntity<String> resp = rest.getForEntity("/device/balance", String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     @Test
-    void balance_wrongToken_returns401() {
-        // A well-formed 64-char hex token that is not registered to any device
-        String nonexistentToken = "a".repeat(64);
-
+    void balance_unregisteredDeviceId_returns401() {
         ResponseEntity<String> resp = rest.exchange(
                 "/device/balance",
                 HttpMethod.GET,
-                new HttpEntity<>(deviceHeaders(nonexistentToken)),
+                new HttpEntity<>(deviceHeaders("does-not-exist")),
                 String.class);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    /**
+     * The actual behavior change (CLAUDE.md §1b, PRD R20): balance is no longer Bearer-token
+     * protected. A registered Device-Id with NO Authorization header at all now succeeds —
+     * previously this would have been a 401.
+     */
+    @Test
+    void balance_validDeviceIdNoAuthorizationHeader_succeeds() {
+        UUID userId = createUser("+62821000004");
+        String deviceId = registerDevice(userId, "pub-bal-004").deviceId();
+        topUp(userId, 90_000L);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Device-Id", deviceId);
+        assertThat(headers.containsKey(HttpHeaders.AUTHORIZATION)).isFalse();
+
+        ResponseEntity<BalanceResponse> resp = rest.exchange(
+                "/device/balance",
+                HttpMethod.GET,
+                new HttpEntity<>(headers),
+                BalanceResponse.class);
+
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(resp.getBody().onlineBalance()).isEqualTo(90_000L);
     }
 
     // -------------------------------------------------------------------------
@@ -168,11 +191,11 @@ class BalanceEnquiryTest extends ApiIntegrationTestBase {
         return resp.getBody();
     }
 
-    private <T> T deviceGet(String path, String deviceToken, Class<T> responseType) {
+    private <T> T deviceGet(String path, String deviceId, Class<T> responseType) {
         ResponseEntity<T> resp = rest.exchange(
                 path,
                 HttpMethod.GET,
-                new HttpEntity<>(deviceHeaders(deviceToken)),
+                new HttpEntity<>(deviceHeaders(deviceId)),
                 responseType);
         assertThat(resp.getStatusCode().is2xxSuccessful())
                 .as("Expected 2xx from %s but got %s", path, resp.getStatusCode())
@@ -187,9 +210,9 @@ class BalanceEnquiryTest extends ApiIntegrationTestBase {
         return h;
     }
 
-    private HttpHeaders deviceHeaders(String token) {
+    private HttpHeaders deviceHeaders(String deviceId) {
         HttpHeaders h = new HttpHeaders();
-        h.setBearerAuth(token);
+        h.set("Device-Id", deviceId);
         return h;
     }
 
