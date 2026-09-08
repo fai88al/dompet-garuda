@@ -379,7 +379,7 @@ class PaymentRequestTest extends ApiIntegrationTestBase {
         HttpHeaders h = new HttpHeaders();
         h.setContentType(MediaType.APPLICATION_JSON);
         if (receiverDeviceId != null) {
-            h.set("Receiver-Device-Id", receiverDeviceId);
+            h.set("Device-Id", receiverDeviceId);
         }
         return h;
     }
@@ -388,7 +388,7 @@ class PaymentRequestTest extends ApiIntegrationTestBase {
         HttpHeaders h = new HttpHeaders();
         h.setContentType(MediaType.APPLICATION_JSON);
         if (payerDeviceId != null) {
-            h.set("Payer-Device-Id", payerDeviceId);
+            h.set("Device-Id", payerDeviceId);
         }
         if (idempotencyKey != null) {
             h.set("Idempotency-Key", idempotencyKey);

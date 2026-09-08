@@ -1,13 +1,13 @@
 package com.dompetgaruda.api.wallet;
 
-import com.dompetgaruda.api.auth.DeviceTokenVerifier;
 import com.dompetgaruda.api.common.entity.Device;
+import com.dompetgaruda.api.common.repository.DeviceRepository;
 import com.dompetgaruda.api.wallet.dto.BalanceResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -15,20 +15,21 @@ import org.springframework.web.server.ResponseStatusException;
 /**
  * Device-facing read endpoint for FR14 — Cek Saldo (check balance).
  *
- * <p>Requires a device Bearer token in the Authorization header.
+ * <p>Identifies the caller via a {@code Device-Id} header, looked up directly against
+ * {@code devices} (CLAUDE.md §1b, PRD R20) — no Bearer token, no signature check.
  * Returns the online balance and pouch-committed figure. Makes no ledger writes.
  */
 @RestController
 @RequestMapping("/device")
-@Tag(name = "Device", description = "Device-facing endpoints — authenticate with a device Bearer token.")
+@Tag(name = "Device", description = "Device-facing endpoints — identify the caller with a Device-Id header.")
 public class DeviceBalanceController {
 
-    private final DeviceTokenVerifier verifier;
+    private final DeviceRepository deviceRepository;
     private final BalanceService balanceService;
 
-    public DeviceBalanceController(DeviceTokenVerifier verifier, BalanceService balanceService) {
-        this.verifier       = verifier;
-        this.balanceService = balanceService;
+    public DeviceBalanceController(DeviceRepository deviceRepository, BalanceService balanceService) {
+        this.deviceRepository = deviceRepository;
+        this.balanceService   = balanceService;
     }
 
     @GetMapping("/balance")
@@ -39,21 +40,22 @@ public class DeviceBalanceController {
                           "it makes no ledger writes.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Balance figures returned."),
-            @ApiResponse(responseCode = "401", description = "Missing or invalid device Bearer token.")
+            @ApiResponse(responseCode = "401", description = "Missing Device-Id header, or device not registered/not ACTIVE.")
     })
     public BalanceResponse getBalance(
-            @RequestHeader(name = HttpHeaders.AUTHORIZATION, required = false) String authHeader) {
-        Device device = resolveDevice(authHeader);
+            @Parameter(description = "Caller's device id (CLAUDE.md §1a). Required — identifies the device and its owning user.", required = true)
+            @RequestHeader(name = "Device-Id", required = false) String deviceId) {
+        Device device = resolveDevice(deviceId);
         return balanceService.getBalance(device);
     }
 
-    private Device resolveDevice(String authHeader) {
-        String rawToken = null;
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            rawToken = authHeader.substring(7).strip();
+    private Device resolveDevice(String deviceId) {
+        if (deviceId == null || deviceId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing Device-Id header");
         }
-        return verifier.verify(rawToken)
+        return deviceRepository.findById(deviceId)
+                .filter(d -> "ACTIVE".equals(d.getStatus()))
                 .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.UNAUTHORIZED, "Invalid device token"));
+                        HttpStatus.UNAUTHORIZED, "Invalid Device-Id"));
     }
 }

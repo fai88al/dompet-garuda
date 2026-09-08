@@ -36,7 +36,7 @@ public class BalanceService {
     /**
      * Derives the online balance and pouch-committed figure for the calling device.
      *
-     * @param device the authenticated device (resolved from Bearer token)
+     * @param device the calling device (resolved from the Device-Id header, CLAUDE.md §1b)
      * @return {@link BalanceResponse} with both figures; never null
      */
     public BalanceResponse getBalance(Device device) {
