@@ -269,7 +269,7 @@ class SyncIngestTest extends ApiIntegrationTestBase {
         UUID userId = createUser(phone);
         RegisterDeviceResponse reg = registerDevice(userId, publicKey);
         topUp(userId, 200_000L);
-        loadPouch(reg.deviceToken(), 100_000L);
+        loadPouch(reg.deviceId(), 100_000L);
         return reg;
     }
 
@@ -291,11 +291,11 @@ class SyncIngestTest extends ApiIntegrationTestBase {
                 TopUpResponse.class);
     }
 
-    private void loadPouch(String deviceToken, long amount) {
+    private void loadPouch(String deviceId, long amount) {
         ResponseEntity<PouchLoadResponse> resp = rest.exchange(
                 "/device/pouch/load",
                 HttpMethod.POST,
-                new HttpEntity<>(new PouchLoadRequest(amount), deviceJsonHeaders(deviceToken)),
+                new HttpEntity<>(new PouchLoadRequest(amount), deviceIdHeaders(deviceId)),
                 PouchLoadResponse.class);
         assertThat(resp.getStatusCode().is2xxSuccessful())
                 .as("Pouch load failed: %s", resp.getStatusCode())
@@ -359,13 +359,6 @@ class SyncIngestTest extends ApiIntegrationTestBase {
         HttpHeaders h = new HttpHeaders();
         h.setContentType(MediaType.APPLICATION_JSON);
         h.setBearerAuth(testAdminJwt());
-        return h;
-    }
-
-    private HttpHeaders deviceJsonHeaders(String token) {
-        HttpHeaders h = new HttpHeaders();
-        h.setContentType(MediaType.APPLICATION_JSON);
-        h.setBearerAuth(token);
         return h;
     }
 

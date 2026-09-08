@@ -51,11 +51,12 @@ class DeviceStatusTest extends ApiIntegrationTestBase {
         // Suspend the device
         patchStatus(reg.deviceId(), "SUSPENDED", UpdateDeviceStatusResponse.class);
 
-        // Verify the device's token is now rejected on a device-auth endpoint
+        // Verify the suspended device is now rejected on a device-auth endpoint
+        // (Device-Id lookup filters to ACTIVE devices, CLAUDE.md §1b)
         ResponseEntity<String> balanceResp = rest.exchange(
                 "/device/balance",
                 HttpMethod.GET,
-                new HttpEntity<>(deviceHeaders(reg.deviceToken())),
+                new HttpEntity<>(deviceHeaders(reg.deviceId())),
                 String.class);
         assertThat(balanceResp.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
@@ -114,10 +115,10 @@ class DeviceStatusTest extends ApiIntegrationTestBase {
         return h;
     }
 
-    private HttpHeaders deviceHeaders(String token) {
+    private HttpHeaders deviceHeaders(String deviceId) {
         HttpHeaders h = new HttpHeaders();
         h.setContentType(MediaType.APPLICATION_JSON);
-        h.setBearerAuth(token);
+        h.set("Device-Id", deviceId);
         return h;
     }
 }

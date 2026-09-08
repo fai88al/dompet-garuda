@@ -74,7 +74,7 @@ class OfflineBleRegressionTest extends ApiIntegrationTestBase {
         topUp(senderUserId, TOPUP_AMOUNT);
 
         // Load the pouch — issues a signed offline certificate (POUCH_LOAD posting, §3).
-        PouchLoadResponse cert = loadPouch(sender.deviceToken(), POUCH_AMOUNT);
+        PouchLoadResponse cert = loadPouch(sender.deviceId(), POUCH_AMOUNT);
         assertThat(cert.certificateId()).isNotNull();
 
         // Build and sign one offline BLE transfer, exactly per the canonical message format
@@ -154,11 +154,11 @@ class OfflineBleRegressionTest extends ApiIntegrationTestBase {
         adminPost("/admin/users/" + userId + "/topup", new TopUpRequest(amount, "test-topup"), TopUpResponse.class);
     }
 
-    private PouchLoadResponse loadPouch(String deviceToken, long amount) {
+    private PouchLoadResponse loadPouch(String deviceId, long amount) {
         ResponseEntity<PouchLoadResponse> resp = rest.exchange(
                 "/device/pouch/load",
                 HttpMethod.POST,
-                new HttpEntity<>(new PouchLoadRequest(amount), deviceJsonHeaders(deviceToken)),
+                new HttpEntity<>(new PouchLoadRequest(amount), deviceIdHeaders(deviceId)),
                 PouchLoadResponse.class);
         assertThat(resp.getStatusCode().is2xxSuccessful())
                 .as("Pouch load failed: %s", resp.getStatusCode())
@@ -178,13 +178,6 @@ class OfflineBleRegressionTest extends ApiIntegrationTestBase {
         HttpHeaders h = new HttpHeaders();
         h.setContentType(MediaType.APPLICATION_JSON);
         h.setBearerAuth(testAdminJwt());
-        return h;
-    }
-
-    private HttpHeaders deviceJsonHeaders(String token) {
-        HttpHeaders h = new HttpHeaders();
-        h.setContentType(MediaType.APPLICATION_JSON);
-        h.setBearerAuth(token);
         return h;
     }
 
