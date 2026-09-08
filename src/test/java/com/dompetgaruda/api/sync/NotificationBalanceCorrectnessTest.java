@@ -93,7 +93,7 @@ class NotificationBalanceCorrectnessTest extends ApiIntegrationTestBase {
         RegisterDeviceResponse receiver = registerDevice(receiverUserId, receiverDeviceId, receiverKeys);
 
         topUp(senderUserId, TOPUP_AMOUNT);
-        PouchLoadResponse cert = loadPouch(sender.deviceToken(), POUCH_AMOUNT);
+        PouchLoadResponse cert = loadPouch(sender.deviceId(), POUCH_AMOUNT);
 
         UUID offlineTxnId = UUID.randomUUID();
         SyncOfflineTxnRequest unsigned = new SyncOfflineTxnRequest(
@@ -122,7 +122,7 @@ class NotificationBalanceCorrectnessTest extends ApiIntegrationTestBase {
             // The one assertion that matters most: balance via the REAL endpoint, unaffected.
             ResponseEntity<BalanceResponse> balanceResp = rest.exchange(
                     "/device/balance", HttpMethod.GET,
-                    new HttpEntity<>(bearerHeaders(receiver.deviceToken())),
+                    new HttpEntity<>(deviceIdHeaders(receiver.deviceId())),
                     BalanceResponse.class);
 
             assertThat(balanceResp.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -197,10 +197,10 @@ class NotificationBalanceCorrectnessTest extends ApiIntegrationTestBase {
         adminPost("/admin/users/" + userId + "/topup", new TopUpRequest(amount, "test-topup"), TopUpResponse.class);
     }
 
-    private PouchLoadResponse loadPouch(String deviceToken, long amount) {
+    private PouchLoadResponse loadPouch(String deviceId, long amount) {
         ResponseEntity<PouchLoadResponse> resp = rest.exchange(
                 "/device/pouch/load", HttpMethod.POST,
-                new HttpEntity<>(new PouchLoadRequest(amount), bearerHeaders(deviceToken)),
+                new HttpEntity<>(new PouchLoadRequest(amount), deviceIdHeaders(deviceId)),
                 PouchLoadResponse.class);
         assertThat(resp.getStatusCode().is2xxSuccessful())
                 .as("Pouch load failed: %s", resp.getStatusCode())
@@ -220,13 +220,6 @@ class NotificationBalanceCorrectnessTest extends ApiIntegrationTestBase {
         HttpHeaders h = new HttpHeaders();
         h.setContentType(MediaType.APPLICATION_JSON);
         h.setBearerAuth(testAdminJwt());
-        return h;
-    }
-
-    private HttpHeaders bearerHeaders(String token) {
-        HttpHeaders h = new HttpHeaders();
-        h.setContentType(MediaType.APPLICATION_JSON);
-        h.setBearerAuth(token);
         return h;
     }
 
