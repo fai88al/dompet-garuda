@@ -36,29 +36,54 @@ form feedback) enforce this identically.
 
 ---
 
-## 1b. ⚠️ Online endpoint authentication — deliberate decision, read carefully
+## 1b. ⚠️ Device authentication — unified Device-Id-only model (deliberate decision)
 
 > [!warning] This is a documented, intentional product decision — not an oversight
-> As of the commit that introduced `receiverDeviceId`/`Receiver-Device-Id`/
-> `Payer-Device-Id`, **online synchronous endpoints (`POST /device/transfer`,
-> `POST /device/payment-request`, `POST /device/payment-request/{id}/pay`) no longer
-> require a Bearer device token.** Authentication is now a plain `device_id` /
-> `Receiver-Device-Id` / `Payer-Device-Id` HTTP header, looked up directly against
-> `devices` with no secret or signature check of any kind.
+> As of this revision, **every device-facing endpoint uses a single `Device-Id`
+> header for identification — no Bearer token, no `Device-Token`, no signature check,
+> anywhere.** This supersedes the earlier, narrower R19 decision (which only covered
+> the three online synchronous endpoints) — it now applies uniformly to **every**
+> device endpoint including `GET /device/balance` and `POST /device/pouch/load`,
+> which previously verified a real Bearer token.
 
-**What this means concretely:** `deviceId` is not secret by design (§1a) — it's meant to be
-public, visible in MQTT topics, QR payloads, logs. Under this model, **anyone who knows a
-registered device's ID can call these three endpoints as that device**, with nothing to
-prove ownership. This is architecturally different from the offline BLE flow (§3, §4),
-where Ed25519 signatures remain the actual security control — this decision only affects
-the three synchronous online endpoints listed above.
+**What this means concretely:** `deviceId` is not secret (§1a) — it's meant to be
+public. Under this model:
+- Anyone knowing a registered `deviceId` can check that device's balance (privacy
+  exposure — not just an impersonation risk).
+- Anyone knowing a `deviceId` can load a pouch certificate as that device — the
+  mechanism that underlies the entire offline BLE trust chain (§3, §4) starts from a
+  now-unauthenticated action.
+- Anyone knowing a `deviceId` can call the online transfer/payment endpoints as that
+  device (unchanged from R19, now just consistently named).
 
-**This was raised explicitly to the human developer, who confirmed this is the intended
-direction for this stage of the product.** Do not "fix" this by silently reintroducing
-Bearer-token auth on these endpoints — if asked to touch these controllers for an unrelated
-reason, leave the auth model as-is unless explicitly instructed otherwise. If a future task
-seems to assume these endpoints are token-protected, stop and flag the discrepancy rather
-than assuming either the code or the task description is wrong.
+**The offline BLE flow's Ed25519 signature verification (§3, §4, §7 invariant 4)
+remains the actual security control for offline settlement** — a fraudulently-loaded
+pouch certificate still can't forge a valid signed offline transaction without the
+real device's private key. This decision affects **who can call these HTTP
+endpoints**, not the cryptographic settlement logic itself.
+
+**This was raised explicitly, twice, to the human developer** — once for the online
+endpoints (R19), once for this full expansion — and confirmed both times as the
+intended direction for this stage of the product. Do not "fix" this by
+reintroducing token verification anywhere. If a task seems to assume any device
+endpoint is token-protected, stop and flag the discrepancy rather than assuming
+either the code or the task is wrong.
+
+### Header naming — standardize on exactly `Device-Id`, nothing else
+
+Every device endpoint uses the literal header name `Device-Id` (not `device_id`, not
+`Receiver-Device-Id`, not `Payer-Device-Id`, not `Authorization: Bearer`). Which
+"role" the device plays (sender, receiver, payer) is determined by which endpoint is
+called and what's in the request body — not by the header name. This is a rename-only
+task for endpoints that already do header-based lookup with a different name/casing,
+and an auth-removal task for `/device/balance` and `/device/pouch/load`.
+
+### `DeviceTokenVerifier` / `DeviceTokenService` — now dead code for HTTP auth
+
+These classes are no longer called by any controller for HTTP request authentication.
+**Do not delete them** — device tokens are still generated once at registration
+(§4) and still reused as the MQTT password (§15), so `DeviceTokenService` remains in
+use for that purpose. Just do not wire `DeviceTokenVerifier` into any new endpoint.
 
 ---
 
@@ -104,11 +129,14 @@ unchanged. Profile isolation rule still applies: any bean referencing admin conf
 ## 4. Authentication
 
 - **Admin/writer:** unchanged — JWT via `POST /admin/auth/login`, `@Profile("api")` only.
-- **Device — offline endpoints (`/device/sync`, `/device/pouch/load`):** Bearer device
-  token, unchanged, still the primary check backed by Ed25519 signatures at settlement.
-- **Device — online endpoints (`/device/transfer`, `/device/payment-request*`):**
-  `device_id`-style header only, no Bearer token, no signature. See §1b.
-- **MQTT:** device token reused as MQTT password, unchanged.
+- **Device — every endpoint** (`/device/sync`, `/device/pouch/load`,
+  `/device/balance`, `/device/transfer`, `/device/payment-request*`): single
+  `Device-Id` header, no Bearer token, no signature check at the HTTP layer. See §1b
+  for the full rationale and consequences.
+- **Offline BLE settlement** still verifies Ed25519 signatures — unaffected by §1b,
+  see §3, §7 invariant 4.
+- **MQTT:** device token still generated at registration, reused as MQTT password —
+  unchanged, still relevant despite HTTP auth no longer using it (§1b).
 
 ---
 
@@ -121,17 +149,18 @@ src/main/java/com/dompetgaruda/api/
                    # everything else permitAll() at the Spring Security layer (§1b —
                    # online device endpoints enforce their own header-based device
                    # lookup inside the controller, not via a security filter)
-  auth/            # AdminTokenFilter (@Profile("api")), DeviceTokenService,
-                   # DeviceTokenVerifier (still used by offline endpoints only)
+  auth/            # AdminTokenFilter (@Profile("api")), DeviceTokenService (still
+                   # used — token generation + MQTT password, §4). DeviceTokenVerifier
+                   # is DEAD CODE for HTTP auth as of §1b — do not wire into new endpoints.
   device/          # registration (deviceId + publicKey validation, §1a),
                    # Ed25519PublicKeyValidator, certificate issuance, status admin endpoints
-  wallet/          # balance enquiry, top-up, pouch provisioning
+  wallet/          # balance enquiry, top-up, pouch provisioning — Device-Id header auth (§1b)
   ledger/          # LedgerPostingService
-  transfer/        # Online transfer — device_id header auth (§1b)
-  qrpayment/       # Bayar QR online/offline — Receiver-Device-Id / Payer-Device-Id
-                   # header auth (§1b)
-  sync/            # offline sync ingest (api) + settlement (worker) — unchanged,
-                   # still Bearer-token + Ed25519 signature verified
+  transfer/        # Online transfer — Device-Id header auth (§1b)
+  qrpayment/       # Bayar QR online/offline — Device-Id header auth (§1b)
+  sync/            # offline sync ingest (api) + settlement (worker) — Device-Id header
+                   # auth (§1b) at the API layer; Ed25519 signature verification still
+                   # happens at worker settlement time (§3, §7 invariant 4) — unaffected
   reconciliation/  # PouchReconciliationJob (worker) — NOTE: this is the existing
                    # pouch-vs-ledger job, NOT the same as Feature A's notification
                    # reconciliation (§17) — do not conflate the two
@@ -202,4 +231,86 @@ current milestone.
    correctness must be fully independent of notification delivery (§7 invariant 8).
    This is the single most important test in the eventual PR.
 
+> [!warning] Known limitation — confirmed in production testing, accepted for now (Option C)
+> `DELIVERED` is set on a successful MQTT **PUBACK**, which only confirms the broker
+> accepted the publish — NOT that any device actually received it. If the receiver
+> isn't connected at settlement time, the broker silently drops the message with no
+> error, and the row is marked `DELIVERED` anyway — a false positive. This means
+> reconnect-triggered reconciliation (step 4) never fires for that transaction, since
+> it only re-publishes rows still `PENDING`. **Money is unaffected** — `GET
+> /device/balance` never depends on this. The user just silently never gets the push.
+> Decision: accepted as known tech debt, to be revisited after Features B and C ship.
+> Do not "fix" this silently in an unrelated PR — it needs its own scoped task (most
+> likely: check actual broker connection state before marking DELIVERED, or add an
+> application-level device acknowledgment instead of trusting PUBACK).
+
 All 7 acceptance criteria and 7 test cases from the signed AC document apply unchanged.
+
+---
+
+## 18. Phase 3 Feature B — Transaction History (STARTING, two open decisions below)
+
+Per v1.1 §3.2–§3.4. Read this fully — **two decisions are flagged below and must be
+resolved before implementation starts**, not guessed at, given the auth-scheme
+confusion that already cost real debugging time on Feature A.
+
+### Endpoints
+
+```
+GET /device/transactions?page=0&size=20&type=ONLINE_TRANSFER&from=...&to=...
+GET /admin/users/{userId}/transactions?page=0&size=20&type=...&from=...&to=...
+```
+
+Both pure reads over `ledger_entries`/`ledger_transactions` — no new balance source,
+per §7 invariant 1. Pagination mandatory from the first implementation.
+
+**Auth: `Device-Id` header, same as every other device endpoint — resolved, see §1b.**
+No ambiguity remains; the three-way auth split that existed when this section was
+first drafted has since been unified.
+
+`GET /admin/users/{userId}/transactions` uses standard Admin JWT — no ambiguity there.
+
+### Response shape (per v1.1 §3.2 — all fields required)
+
+```json
+{
+  "content": [{
+    "transactionId": 123,
+    "referenceId": "...",
+    "type": "ONLINE_TRANSFER",
+    "direction": "DEBIT",
+    "amount": 50000,
+    "counterparty": "...",
+    "status": "SUCCESS",
+    "notes": "...",
+    "createdAt": "2026-09-08T10:15:00Z"
+  }],
+  "page": 0, "size": 20, "totalElements": 142, "totalPages": 8
+}
+```
+
+### Status field — cross-system consistency required (v1.1 §3.3)
+
+`SUCCESS` / `PENDING` / `FAILED` / `REVERSED`, derived (not stored redundantly) from
+existing state:
+- `SUCCESS` — settled `ledger_transactions` row exists.
+- `PENDING` — offline transaction uploaded but not yet worker-settled (still in
+  `sync_inbox`).
+- `FAILED` — flagged, never posted (`flagged_transactions`).
+- `REVERSED` — see Open Decision 2.
+
+> [!note] `REVERSED` — real mechanism confirmed needed, but scoped SEPARATELY
+> Decided: yes, a real reversal capability is wanted eventually — but explicitly
+> **not** as part of this PR. Scope for Feature B stays exactly what it was:
+> `REVERSED` is reserved in the enum but never produced by any code path here. The
+> actual reversal mechanism (which ledger entries get reversed, how, by whom, what
+> triggers it) is a separate, larger design conversation to be scoped later. Do not
+> attempt to design or build it as a side effect of this PR — that would blur the
+> milestone boundary Feature B is meant to close cleanly.
+
+### Audit log (v1.1 §3.4 — new subsystem)
+
+New `admin_access_log` table: admin identity (from JWT), `userId` accessed,
+timestamp, query parameters used. Written on **every** call to
+`GET /admin/users/{userId}/transactions`, including empty results — the access
+itself is what's audited, not the data returned.

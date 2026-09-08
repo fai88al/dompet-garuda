@@ -6,7 +6,7 @@
 | **Initiator** | Faisal (via Fastwork) |
 | **Stage** | Prototype |
 | **Doc owner** | Backend team |
-| **Status** | Phase 1, Phase 2, Phase 2b, and Device ID Migration all delivered. Phase 3 approved (v1.1) — Feature A (Notification Reconciliation) starting now. Online endpoint auth model changed to header-based device lookup (R19, see below) — deliberate decision, documented. |
+| **Status** | Phase 1, Phase 2, Phase 2b, and Device ID Migration all delivered. Phase 3 approved (v1.1) — Feature A closed (with documented known limitation), Feature B (Transaction History) starting now. Device auth unified to a single `Device-Id` header across every device endpoint (R19 → expanded by R20) — deliberate decision, documented, consequences explicitly flagged and confirmed. |
 
 ---
 
@@ -20,24 +20,35 @@ Obsidian knowledge base or prior PRD revisions for full text.
 
 ## 6a. Functional requirements — new
 
-- **FR28.** `POST /device/transfer`, `POST /device/payment-request`, and
-  `POST /device/payment-request/{id}/pay` authenticate via a plain `device_id` /
-  `Receiver-Device-Id` / `Payer-Device-Id` header — a direct lookup against `devices`,
-  no Bearer token, no signature check. **Status: delivered.** See R19.
+- **FR28.** Every device-facing endpoint (`/device/sync`, `/device/pouch/load`,
+  `/device/balance`, `/device/transfer`, `/device/payment-request*`) authenticates
+  via a single `Device-Id` header — direct lookup against `devices`, no Bearer token,
+  no signature check at the HTTP layer. **Status: delivered.** See R19, R20.
 
 ---
 
 ## 9a. Decisions — new
 
-- **R19 (NEW): Online endpoint authentication. DECIDED — header-based device ID
-  lookup, no Bearer token, no signature.** Raised explicitly as a security concern
-  (deviceId is not secret by design — visible in QR payloads, MQTT topics, logs — so
-  this means anyone knowing a valid deviceId can act as that device on these three
-  endpoints). **Confirmed as the intended direction by the client-side decision-maker
-  despite this trade-off being explained in full.** Documented here so it is never
-  mistaken for an oversight or silently "fixed" back to token auth. Scope is limited
-  to the three online synchronous endpoints — the offline BLE flow's Ed25519 signature
-  verification (the system's actual cryptographic security control) is unaffected.
+- **R19: Online endpoint authentication. DECIDED — header-based device ID lookup, no
+  Bearer token, no signature.** Originally scoped to the three online synchronous
+  endpoints only. Raised explicitly as a security concern (deviceId is not secret by
+  design). **Confirmed as the intended direction by the client-side decision-maker
+  despite this trade-off being explained in full.**
+
+- **R20 (NEW): Expanded to ALL device endpoints, `Device-Token` concept dropped
+  entirely. DECIDED — single unified `Device-Id` header everywhere, including
+  `GET /device/balance` and `POST /device/pouch/load` (previously genuinely
+  Bearer-token-verified).** This is a materially larger decision than R19 — it
+  removes authentication from balance lookups (privacy exposure: anyone knowing a
+  `deviceId` can check that device's balance) and from pouch loading (the mechanism
+  that issues the certificate underlying the entire offline BLE trust model).
+  **This consequence was explicitly flagged to the client-side decision-maker before
+  implementation, and the decision was confirmed to proceed anyway.** The offline
+  BLE flow's Ed25519 signature verification remains the actual cryptographic
+  security control for settlement and is unaffected by this decision — R20 only
+  affects who can call these HTTP endpoints. `DeviceTokenVerifier` is retained in
+  code as dead code (not deleted) but wired into nothing; `DeviceTokenService`
+  remains in use for MQTT password generation only.
 
 ---
 
@@ -48,22 +59,29 @@ Phase 1, Phase 2, Phase 2b (MQTT provisioning), Device ID Migration, Public Key 
 validation (backend + backoffice), online-endpoint auth model change (R19) — all
 delivered and live in production.
 
-### Current — Phase 3, Feature A: Notification Reconciliation
+### Feature A — Notification Reconciliation — CLOSED (with documented known limitation)
 
 | # | Task | Status |
 |---|---|---|
-| 1 | Proposal v1.0 sent, revised to v1.1, approved by Faisal | ✅ done |
-| 2 | Acceptance criteria + test cases agreed (signed doc) | ✅ done |
-| 3 | 3-day expiry window confirmed with client | ✅ done |
-| 4 | `CLAUDE.md`/`PRD.md` updated for this milestone | ✅ done (this revision) |
-| 5 | `notification_log` migration + worker settlement integration | ⬅ start here |
-| 6 | Reconciliation-on-reconnect + scheduled expiry sweep | pending |
-| 7 | All 7 test cases passing, verified in production | pending |
-| 8 | Milestone payment (20%, Rp 1,600,000) invoiced | pending |
+| 1–4 | Proposal, AC agreement, expiry window, docs | ✅ done |
+| 5–6 | Implementation, tests | ✅ done, PR merged |
+| 7 | Live production verification (real signed offline transfer, both scenarios) | ✅ done |
+| — | **Known limitation found during live testing**: `DELIVERED` set on MQTT PUBACK, not actual device receipt — false positive when receiver isn't connected. Money-safety unaffected (verified). Accepted as tech debt (Option C), documented in CLAUDE.md §17, deferred to after B/C. | ✅ documented |
+| 8 | Milestone payment (20%, Rp 1,600,000) | ready to invoice |
+
+### Current — Phase 3, Feature B: Transaction History
+
+| # | Task | Status |
+|---|---|---|
+| 1 | `CLAUDE.md` §18 spec drafted | ✅ done (this revision) |
+| 2 | Auth scheme for `GET /device/transactions` | ✅ resolved — Device-Id, per R20 |
+| 3 | Does `REVERSED` need a real reversal mechanism | ✅ resolved — yes, eventually, but scoped as a **separate** future task, not part of this milestone |
+| 4 | Endpoints + pagination + audit log implementation | pending |
+| 5 | Live production verification | pending |
+| 6 | Milestone payment (25%, Rp 2,000,000) | pending |
 
 ### Not yet started
-Feature B (Transaction History), Feature C (Analytics Dashboard) — both depend on
-Feature A completing first per the agreed build order.
+Feature C (Analytics Dashboard) — depends on Feature B completing first.
 
 ### Standing follow-up (unscheduled)
 Backup restore test, admin password-change endpoint, MQTT password rotation, BLE GATT
