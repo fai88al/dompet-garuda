@@ -6,7 +6,7 @@
 | **Initiator** | Faisal (via Fastwork) |
 | **Stage** | Prototype |
 | **Doc owner** | Backend team |
-| **Status** | Phase 1, Phase 2, Phase 2b, and Device ID Migration all delivered. Phase 3 approved (v1.1) — Feature A closed (with documented known limitation), Feature B (Transaction History) starting now. Device auth unified to a single `Device-Id` header across every device endpoint (R19 → expanded by R20) — deliberate decision, documented, consequences explicitly flagged and confirmed. |
+| **Status** | Phase 1, Phase 2, Phase 2b, Device ID Migration, Feature A, and Feature B all delivered and verified live. Feature C (Analytics Dashboard) starting now — last feature in the approved v1.1 scope, final handover follows once it closes. Device auth unified to a single `Device-Id` header across every device endpoint (R19 → expanded by R20) — deliberate decision, documented, consequences explicitly flagged and confirmed. |
 
 ---
 
@@ -69,19 +69,30 @@ delivered and live in production.
 | — | **Known limitation found during live testing**: `DELIVERED` set on MQTT PUBACK, not actual device receipt — false positive when receiver isn't connected. Money-safety unaffected (verified). Accepted as tech debt (Option C), documented in CLAUDE.md §17, deferred to after B/C. | ✅ documented |
 | 8 | Milestone payment (20%, Rp 1,600,000) | ready to invoice |
 
-### Current — Phase 3, Feature B: Transaction History
+### Feature B — Transaction History — CLOSED
 
 | # | Task | Status |
 |---|---|---|
-| 1 | `CLAUDE.md` §18 spec drafted | ✅ done (this revision) |
-| 2 | Auth scheme for `GET /device/transactions` | ✅ resolved — Device-Id, per R20 |
-| 3 | Does `REVERSED` need a real reversal mechanism | ✅ resolved — yes, eventually, but scoped as a **separate** future task, not part of this milestone |
-| 4 | Endpoints + pagination + audit log implementation | pending |
-| 5 | Live production verification | pending |
-| 6 | Milestone payment (25%, Rp 2,000,000) | pending |
+| 1 | `CLAUDE.md` §18 spec, both decisions resolved (Device-Id auth; REVERSED reserved-only) | ✅ done |
+| 2 | Backend: endpoints + pagination + audit log (PR #38) | ✅ done, merged |
+| 3 | Backoffice: transaction history section on user detail page (PR #14) | ✅ done, merged |
+| 4 | Live production verification (both backend and backoffice) | ✅ done — confirmed by human developer live at backoffice.dompetgaruda.com |
+| 5 | Milestone payment (25%, Rp 2,000,000) | ready to invoice |
+
+### Current — Phase 3, Feature C: Analytics Dashboard
+
+| # | Task | Status |
+|---|---|---|
+| 1 | `CLAUDE.md` §19 spec drafted | ✅ done (this revision) |
+| 2 | Backend: `GET /admin/analytics/overview` + aggregation queries | ⬅ start here |
+| 3 | Backoffice: dashboard charts (recharts, already in stack) | pending backend |
+| 4 | Live production verification | pending |
+| 5 | Milestone payment (25%, Rp 2,000,000) | pending |
+| 6 | Final handover (10%, Rp 800,000) — after Feature C closes | pending |
 
 ### Not yet started
-Feature C (Analytics Dashboard) — depends on Feature B completing first.
+Nothing — Feature C is the last feature in the approved v1.1 scope. Final handover
+follows once it closes.
 
 ### Standing follow-up (unscheduled)
 Backup restore test, admin password-change endpoint, MQTT password rotation, BLE GATT

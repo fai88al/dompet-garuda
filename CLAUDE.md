@@ -208,7 +208,7 @@ decision.**
 
 ---
 
-## 17. Phase 3 Feature A — Notification Reconciliation (STARTING NOW)
+## 17. Phase 3 Feature A — Notification Reconciliation (DELIVERED, known limitation documented)
 
 Approved in proposal revision v1.1, acceptance criteria agreed with Faisal
 (`AC-TestCase-Fitur-A-Notifikasi-Rekonsiliasi.docx`). Not yet implemented — this is the
@@ -248,11 +248,11 @@ All 7 acceptance criteria and 7 test cases from the signed AC document apply unc
 
 ---
 
-## 18. Phase 3 Feature B — Transaction History (STARTING, two open decisions below)
+## 18. Phase 3 Feature B — Transaction History (DELIVERED — backend + backoffice, live)
 
-Per v1.1 §3.2–§3.4. Read this fully — **two decisions are flagged below and must be
-resolved before implementation starts**, not guessed at, given the auth-scheme
-confusion that already cost real debugging time on Feature A.
+Per v1.1 §3.2–§3.4. Both decisions flagged during drafting are resolved (see below).
+Backend delivered (PR #38), backoffice UI delivered (PR #14), verified live in
+production by the human developer.
 
 ### Endpoints
 
@@ -314,3 +314,68 @@ New `admin_access_log` table: admin identity (from JWT), `userId` accessed,
 timestamp, query parameters used. Written on **every** call to
 `GET /admin/users/{userId}/transactions`, including empty results — the access
 itself is what's audited, not the data returned.
+---
+
+## 19. Phase 3 Feature C — Analytics Dashboard (STARTING NOW)
+
+Per the original approved technical scope. Depends on Feature B (§18, delivered) —
+shares query shape over `ledger_transactions`, built after it deliberately so query
+logic isn't written twice.
+
+### Endpoint
+
+```
+GET /admin/analytics/overview?from=...&to=...
+```
+
+Standard Admin JWT — same pattern as every other `/admin/**` endpoint, no ambiguity.
+**Read-only, always** — must never write to the ledger under any circumstance, and
+query cost must not degrade live transaction processing performance.
+
+### Metrics (per the approved v1.1 scope)
+
+```json
+{
+  "dailyVolume": [
+    { "date": "2026-09-01", "type": "ONLINE_TRANSFER", "count": 12, "totalAmount": 600000 }
+  ],
+  "typeDistribution": [
+    { "type": "OFFLINE_TRANSFER", "count": 340 }
+  ],
+  "statusCounts": {
+    "SUCCESS": 512, "PENDING": 3, "FAILED": 8, "REVERSED": 0
+  },
+  "activeUsers": { "daily": 12, "sevenDay": 45, "thirtyDay": 89 },
+  "deviceStatus": { "ACTIVE": 45, "SUSPENDED": 3, "LOCKED": 1 }
+}
+```
+
+> [!note] `REVERSED` will always be `0` right now
+> Per §18's resolved decision, no reversal mechanism exists yet — this count exists
+> in the shape for forward compatibility but will always report zero until that
+> separate future task ships. Do not treat a non-zero value here as expected;
+> flag it if one ever appears, since it would mean something unexpected happened.
+
+### Query approach
+
+Direct SQL for aggregation, not ORM-generated — consistent with this project's
+existing money-query philosophy (§2, §7). Three logical query groups:
+
+1. **Daily volume by type** — `GROUP BY DATE(created_at), type` over
+   `ledger_transactions` within the requested date range.
+2. **Type distribution** — `GROUP BY type` count over the same range.
+3. **Device status counts** — simple `GROUP BY status` over `devices`, no date
+   filter (current snapshot, not historical).
+
+Active user counts (daily/7-day/30-day) require a distinct-user query over
+transactions in each window — confirm the exact definition of "active" (any
+transaction? Any login? Device activity?) with the human developer before
+implementing if not already unambiguous from context — this is the one metric
+without an obvious single interpretation.
+
+### Performance
+
+No caching or materialized views for this pass — direct queries are acceptable at
+current data volume. If aggregate queries start measurably affecting live
+transaction latency as data grows, that's a follow-up optimization task, not
+something to preemptively build now.
